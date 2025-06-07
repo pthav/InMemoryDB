@@ -16,23 +16,30 @@ func NewInMemoryDatabase() *InMemoryDatabase {
 	return db
 }
 
-// Set a key value pair in the database
-func (i *InMemoryDatabase) Set(key string, value string) bool {
-	i.store.Store(key, value)
-	return true
+// Create a key value pair in the database
+func (i *InMemoryDatabase) Create(key string, value string) bool {
+	_, loaded := i.store.LoadOrStore(key, value)
+	return !loaded
 }
 
 // Get a value from the database by key
-func (i *InMemoryDatabase) Get(key string) (string, bool) {
-	loaded, ok := i.store.Load(key)
-	if ok {
-		return loaded.(string), true
+func (i *InMemoryDatabase) Read(key string) (string, bool) {
+	value, loaded := i.store.Load(key)
+	if loaded {
+		return value.(string), true
 	}
 	return "", false
 }
 
+// Update a key value pair in the database if it exists. Otherwise, Create a key value pair.
+func (i *InMemoryDatabase) Update(key string, value string) bool {
+	_, loaded := i.store.LoadOrStore(key, value)
+	i.store.Store(key, value)
+	return loaded
+}
+
 // Delete a key value pair from the database
 func (i *InMemoryDatabase) Delete(key string) bool {
-	i.store.Delete(key)
-	return true
+	_, loaded := i.store.LoadAndDelete(key)
+	return loaded
 }

@@ -7,8 +7,9 @@ import (
 )
 
 type Database interface {
-	Get(key string) (string, bool)
-	Set(key string, value string) bool
+	Create(key string, value string) bool
+	Read(key string) (string, bool)
+	Update(key string, value string) bool
 	Delete(key string) bool
 }
 
@@ -32,11 +33,11 @@ type Wrapper struct {
 func NewHandler(db Database) *Wrapper {
 	handler := &Wrapper{db: db}
 	handler.router = mux.NewRouter()
-	handler.router.HandleFunc("/v1/get", handler.getHandler).
+	handler.router.HandleFunc("/v1/key", handler.getHandler).
 		Methods("GET")
-	handler.router.HandleFunc("/v1/set", handler.setHandler).
+	handler.router.HandleFunc("/v1/key", handler.setHandler).
 		Methods("POST")
-	handler.router.HandleFunc("/v1/delete", handler.deleteHandler).
+	handler.router.HandleFunc("/v1/key", handler.deleteHandler).
 		Methods("DELETE")
 	return handler
 }
@@ -48,7 +49,7 @@ func (h *Wrapper) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 // getHandler use request key and return associated value if it exists
 func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
-	value, loaded := h.db.Get(key)
+	value, loaded := h.db.Read(key)
 	if loaded {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
@@ -68,7 +69,7 @@ func (h *Wrapper) setHandler(w http.ResponseWriter, r *http.Request) {
 	var requestData RequestData
 	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err == nil {
-		set := h.db.Set(requestData.Key, requestData.Value)
+		set := h.db.Create(requestData.Key, requestData.Value)
 		if set {
 			w.WriteHeader(http.StatusOK)
 		} else {
