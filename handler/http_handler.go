@@ -33,10 +33,12 @@ type Wrapper struct {
 func NewHandler(db Database) *Wrapper {
 	handler := &Wrapper{db: db}
 	handler.router = mux.NewRouter()
-	handler.router.HandleFunc("/v1/key", handler.getHandler).
-		Methods("GET")
-	handler.router.HandleFunc("/v1/key", handler.setHandler).
+	handler.router.HandleFunc("/v1/key", handler.createHandler).
 		Methods("POST")
+	handler.router.HandleFunc("/v1/key", handler.readHandler).
+		Methods("GET")
+	handler.router.HandleFunc("/v1/key", handler.updateHandler).
+		Methods("PUT")
 	handler.router.HandleFunc("/v1/key", handler.deleteHandler).
 		Methods("DELETE")
 	return handler
@@ -46,34 +48,52 @@ func (h *Wrapper) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	h.router.ServeHTTP(writer, request)
 }
 
-// getHandler use request key and return associated value if it exists
-func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Query().Get("key")
-	value, loaded := h.db.Read(key)
-	if loaded {
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "application/json")
-		response := Response{Key: key, Value: value, Status: http.StatusOK}
-		err := json.NewEncoder(w).Encode(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		w.WriteHeader(http.StatusNotFound)
-	}
-}
-
 // setHandler use request key and value from the request body to set the key value pair in the database
-func (h *Wrapper) setHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Wrapper) createHandler(w http.ResponseWriter, r *http.Request) {
 	var requestData RequestData
 	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err == nil {
 		set := h.db.Create(requestData.Key, requestData.Value)
 		if set {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
+		}
+	} else {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+}
+
+// getHandler use request key and return associated value if it exists
+func (h *Wrapper) readHandler(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	value, loaded := h.db.Read(key)
+	response := Response{Key: key, Value: value}
+	w.Header().Set("Content-Type", "application/json")
+
+	if loaded {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+	}
+
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// setHandler use request key and value from the request body to set the key value pair in the database
+func (h *Wrapper) updateHandler(w http.ResponseWriter, r *http.Request) {
+	var requestData RequestData
+	err := json.NewDecoder(r.Body).Decode(&requestData)
+	if err == nil {
+		set := h.db.Update(requestData.Key, requestData.Value)
+		if set {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusCreated)
 		}
 	} else {
 		http.Error(w, err.Error(), http.StatusBadRequest)
