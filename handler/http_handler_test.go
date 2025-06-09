@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,7 +15,7 @@ import (
 	"testing"
 )
 
-// DatabaseTestImplementation is an implementation of Database used for test cases
+// DatabaseTestImplementation is an implementation of database used for test cases
 type databaseTestImplementation struct {
 	createCalls []struct {
 		key   string
@@ -66,99 +69,74 @@ func (db *databaseTestImplementation) Delete(key string) bool {
 }
 
 func TestWrapper_createHandler(t *testing.T) {
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
-	}
 	tests := []struct {
-		name       string
-		db         *databaseTestImplementation
-		key        string
-		value      string
-		status     int
-		checkCalls bool
-		args       args
+		name         string
+		key          string
+		value        string
+		status       int
+		createReturn bool
+		checkCalls   bool
 	}{
 		{
-			name: "Try to create non-existing key value pair",
-			db: &databaseTestImplementation{
-				createCalls: []struct {
-					key   string
-					value string
-				}{},
-				createReturn: true,
-			},
-			key:        "testKey",
-			value:      "testValue",
-			status:     http.StatusCreated,
-			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "POST",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
+			name:         "Try to create non-existing key value pair",
+			key:          "testKey",
+			value:        "testValue",
+			status:       http.StatusCreated,
+			createReturn: true,
+			checkCalls:   true,
 		},
 		{
-			name: "Try to create an existing key value pair",
-			db: &databaseTestImplementation{
-				createCalls: []struct {
-					key   string
-					value string
-				}{},
-				createReturn: false,
-			},
-			key:        "testKey",
-			value:      "testValue",
-			status:     http.StatusBadRequest,
-			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "POST",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
+			name:         "Try to create an existing key value pair",
+			key:          "testKey",
+			value:        "testValue",
+			status:       http.StatusBadRequest,
+			createReturn: false,
+			checkCalls:   true,
 		},
 		{
 			name:       "Send a bad request body",
-			db:         &databaseTestImplementation{},
 			key:        "testKey",
 			value:      `{"test": "test"}`,
 			status:     http.StatusBadRequest,
 			checkCalls: false,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "POST",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.r.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"key": "%s", "value": "%s"}`, tt.key, tt.value)))
-			h := NewHandler(tt.db)
-			h.ServeHTTP(tt.args.w, tt.args.r)
+			// Set up writer and request
+			w := httptest.NewRecorder()
+			r := &http.Request{
+				Method: "POST",
+				URL:    &url.URL{Path: "/v1/keys"},
+				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"key": "%s", "value": "%s"}`, tt.key, tt.value))),
+			}
 
-			resp := tt.args.w.(*httptest.ResponseRecorder)
-			if resp.Code != tt.status {
-				t.Errorf("Response code = %v; want %v", resp.Code, tt.status)
+			// Set up database
+			db := &databaseTestImplementation{
+				createCalls: []struct {
+					key   string
+					value string
+				}{},
+				createReturn: tt.createReturn,
+			}
+			h := NewHandler(db, slog.New(slog.DiscardHandler))
+			h.ServeHTTP(w, r)
+
+			if w.Code != tt.status {
+				t.Errorf("response code = %v; want %v", w.Code, tt.status)
 			}
 
 			if tt.checkCalls {
-				if len(tt.db.createCalls) == 0 {
+				if len(db.createCalls) == 0 {
 					t.Errorf("Create() calls not created")
 				}
 
-				if tt.db.createCalls[0].key != tt.key {
-					t.Errorf("Create() key = %v; want %v", tt.db.createCalls[0].key, tt.key)
+				if db.createCalls[0].key != tt.key {
+					t.Errorf("Create() key = %v; want %v", db.createCalls[0].key, tt.key)
 				}
 
-				if tt.db.createCalls[0].value != tt.value {
-					t.Errorf("Create() value = %v; want %v", tt.db.createCalls[0].value, tt.value)
+				if db.createCalls[0].value != tt.value {
+					t.Errorf("Create() value = %v; want %v", db.createCalls[0].value, tt.value)
 				}
 			}
 		})
@@ -166,94 +144,75 @@ func TestWrapper_createHandler(t *testing.T) {
 }
 
 func TestWrapper_readHandler(t *testing.T) {
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
-	}
 	tests := []struct {
 		name       string
-		db         *databaseTestImplementation
 		key        string
 		value      string
 		status     int
+		readReturn bool
 		checkCalls bool
-		args       args
 	}{
 		{
-			name: "Read an existing key value pair",
-			db: &databaseTestImplementation{
-				readCalls: []struct {
-					key string
-				}{},
-				readReturn: true,
-				readString: "testValue",
-			},
+			name:       "Read an existing key value pair",
 			key:        "testKey",
 			value:      "testValue",
 			status:     http.StatusOK,
+			readReturn: true,
 			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "GET",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
 		},
 		{
-			name: "Try to read a non-existing key value pair",
-			db: &databaseTestImplementation{
-				readCalls: []struct {
-					key string
-				}{},
-				readReturn: false,
-				readString: "",
-			},
+			name:       "Try to read a non-existing key value pair",
 			key:        "testKey",
 			value:      "",
 			status:     http.StatusNotFound,
+			readReturn: false,
 			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "GET",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := tt.args.r.URL.Query()
-			q.Set("key", tt.key)
-			tt.args.r.URL.RawQuery = q.Encode()
-			h := NewHandler(tt.db)
-			h.ServeHTTP(tt.args.w, tt.args.r)
-
-			resp := tt.args.w.(*httptest.ResponseRecorder)
-			if resp.Code != tt.status {
-				t.Errorf("Response code = %v; want %v", resp.Code, tt.status)
+			// Set up writer and request
+			w := httptest.NewRecorder()
+			r := &http.Request{
+				Method: "GET",
+				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
 			}
 
-			var body Response
-			err := json.NewDecoder(resp.Body).Decode(&body)
+			// Set up database
+			db := &databaseTestImplementation{
+				readCalls: []struct {
+					key string
+				}{},
+				readReturn: tt.readReturn,
+				readString: tt.value,
+			}
+			h := NewHandler(db, slog.New(slog.DiscardHandler))
+			h.ServeHTTP(w, r)
+
+			// Check expectations
+			if w.Code != tt.status {
+				t.Errorf("response code = %v; want %v", w.Code, tt.status)
+			}
+
+			var body response
+			err := json.NewDecoder(w.Body).Decode(&body)
 			if err != nil {
 				t.Errorf("Failed to decode response body JSON: %v", err)
 			}
 
-			expected := Response{Key: tt.key, Value: tt.value}
+			expected := response{Key: tt.key, Value: tt.value}
 
 			if !reflect.DeepEqual(expected, body) {
-				t.Errorf("Response body = %v; want %v", body, expected)
+				t.Errorf("response body = %v; want %v", body, expected)
 			}
 
 			if tt.checkCalls {
-				if len(tt.db.readCalls) == 0 {
-					t.Errorf("Delete() calls not created")
+				if len(db.readCalls) == 0 {
+					t.Errorf("Read() calls not created")
 				}
 
-				if tt.db.readCalls[0].key != tt.key {
-					t.Errorf("Delete() key = %v; want %v", tt.db.readCalls[0].key, tt.key)
+				if db.readCalls[0].key != tt.key {
+					t.Errorf("Read() key = %v; want %v", db.readCalls[0].key, tt.key)
 				}
 			}
 		})
@@ -261,99 +220,75 @@ func TestWrapper_readHandler(t *testing.T) {
 }
 
 func TestWrapper_updateHandler(t *testing.T) {
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
-	}
 	tests := []struct {
-		name       string
-		db         *databaseTestImplementation
-		key        string
-		value      string
-		status     int
-		checkCalls bool
-		args       args
+		name         string
+		key          string
+		value        string
+		status       int
+		updateReturn bool
+		checkCalls   bool
 	}{
 		{
-			name: "Update non-existing key value pair",
-			db: &databaseTestImplementation{
-				updateCalls: []struct {
-					key   string
-					value string
-				}{},
-				updateReturn: false,
-			},
-			key:        "testKey",
-			value:      "testValue",
-			status:     http.StatusCreated,
-			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "PUT",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
+			name:         "Update non-existing key value pair",
+			key:          "testKey",
+			value:        "testValue",
+			status:       http.StatusCreated,
+			updateReturn: false,
+			checkCalls:   true,
 		},
 		{
-			name: "Update an existing key value pair",
-			db: &databaseTestImplementation{
-				updateCalls: []struct {
-					key   string
-					value string
-				}{},
-				updateReturn: true,
-			},
-			key:        "testKey",
-			value:      "testValue",
-			status:     http.StatusOK,
-			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "PUT",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
+			name:         "Update an existing key value pair",
+			key:          "testKey",
+			value:        "testValue",
+			status:       http.StatusOK,
+			updateReturn: true,
+			checkCalls:   true,
 		},
 		{
 			name:       "Send a bad request body",
-			db:         &databaseTestImplementation{},
 			key:        "testKey",
 			value:      `{"test": "test"}`,
 			status:     http.StatusBadRequest,
 			checkCalls: false,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "PUT",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.r.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"key": "%s", "value": "%s"}`, tt.key, tt.value)))
-			h := NewHandler(tt.db)
-			h.ServeHTTP(tt.args.w, tt.args.r)
-
-			resp := tt.args.w.(*httptest.ResponseRecorder)
-			if resp.Code != tt.status {
-				t.Errorf("Response code = %v; want %v", resp.Code, tt.status)
+			// Set up writer and request
+			w := httptest.NewRecorder()
+			r := &http.Request{
+				Method: "PUT",
+				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
+				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s"}`, tt.value))),
 			}
 
+			// Set up database
+			db := &databaseTestImplementation{
+				updateCalls: []struct {
+					key   string
+					value string
+				}{},
+				updateReturn: tt.updateReturn,
+			}
+			h := NewHandler(db, slog.New(slog.DiscardHandler))
+			h.ServeHTTP(w, r)
+
+			if w.Code != tt.status {
+				t.Errorf("response code = %v; want %v", w.Code, tt.status)
+			}
+
+			// Check expectations
 			if tt.checkCalls {
-				if len(tt.db.updateCalls) == 0 {
+				if len(db.updateCalls) == 0 {
 					t.Errorf("Update() calls not created")
 				}
 
-				if tt.db.updateCalls[0].key != tt.key {
-					t.Errorf("Update() key = %v; want %v", tt.db.updateCalls[0].key, tt.key)
+				if db.updateCalls[0].key != tt.key {
+					t.Errorf("Update() key = %v; want %v", db.updateCalls[0].key, tt.key)
 				}
 
-				if tt.db.updateCalls[0].value != tt.value {
-					t.Errorf("Update() value = %v; want %v", tt.db.updateCalls[0].value, tt.value)
+				if db.updateCalls[0].value != tt.value {
+					t.Errorf("Update() value = %v; want %v", db.updateCalls[0].value, tt.value)
 				}
 			}
 		})
@@ -361,79 +296,96 @@ func TestWrapper_updateHandler(t *testing.T) {
 }
 
 func TestWrapper_deleteHandler(t *testing.T) {
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
-	}
 	tests := []struct {
-		name       string
-		db         *databaseTestImplementation
-		key        string
-		status     int
-		checkCalls bool
-		args       args
+		name         string
+		key          string
+		status       int
+		deleteReturn bool
+		checkCalls   bool
 	}{
 		{
-			name: "Delete an existing key value pair",
-			db: &databaseTestImplementation{
-				deleteCalls: []struct {
-					key string
-				}{},
-				deleteReturn: true,
-			},
-			key:        "testKey",
-			status:     http.StatusOK,
-			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "DELETE",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
+			name:         "Delete an existing key value pair",
+			key:          "testKey",
+			status:       http.StatusOK,
+			deleteReturn: true,
+			checkCalls:   true,
 		},
 		{
-			name: "Try to delete a non-existing key value pair",
-			db: &databaseTestImplementation{
-				deleteCalls: []struct {
-					key string
-				}{},
-				deleteReturn: false,
-			},
-			key:        "testKey",
-			status:     http.StatusNotFound,
-			checkCalls: true,
-			args: args{
-				w: httptest.NewRecorder(),
-				r: &http.Request{
-					Method: "DELETE",
-					URL:    &url.URL{Path: "/v1/key"},
-				},
-			},
+			name:         "Try to delete a non-existing key value pair",
+			key:          "testKey",
+			status:       http.StatusNotFound,
+			deleteReturn: false,
+			checkCalls:   true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := tt.args.r.URL.Query()
-			q.Set("key", tt.key)
-			tt.args.r.URL.RawQuery = q.Encode()
-			h := NewHandler(tt.db)
-			h.ServeHTTP(tt.args.w, tt.args.r)
+			// Set up writer and request
+			w := httptest.NewRecorder()
+			r := &http.Request{
+				Method: "DELETE",
+				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
+			}
 
-			resp := tt.args.w.(*httptest.ResponseRecorder)
-			if resp.Code != tt.status {
-				t.Errorf("Response code = %v; want %v", resp.Code, tt.status)
+			// Set up database
+			db := &databaseTestImplementation{
+				deleteCalls: []struct {
+					key string
+				}{},
+				deleteReturn: tt.deleteReturn,
+			}
+			h := NewHandler(db, slog.New(slog.DiscardHandler))
+			h.ServeHTTP(w, r)
+
+			// Check expectations
+			if w.Code != tt.status {
+				t.Errorf("response code = %v; want %v", w.Code, tt.status)
 			}
 
 			if tt.checkCalls {
-				if len(tt.db.deleteCalls) == 0 {
+				if len(db.deleteCalls) == 0 {
 					t.Errorf("Delete() calls not created")
 				}
 
-				if tt.db.deleteCalls[0].key != tt.key {
-					t.Errorf("Delete() key = %v; want %v", tt.db.deleteCalls[0].key, tt.key)
+				if db.deleteCalls[0].key != tt.key {
+					t.Errorf("Delete() key = %v; want %v", db.deleteCalls[0].key, tt.key)
 				}
 			}
 		})
+	}
+}
+
+func TestLoggingMiddleware(t *testing.T) {
+	// Create logger
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
+	wrapper := Wrapper{logger: logger}
+
+	router := mux.NewRouter()
+	router.Use(wrapper.loggingMiddleware)
+	router.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("handler reached"))
+		if err != nil {
+			t.Errorf("Error writing response: %v", err)
+		}
+	})
+
+	// Serve test requests
+	r := httptest.NewRequest("GET", "/test", io.NopCloser(strings.NewReader(`{"key":"test","value":"test"}`)))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// Check expectations
+	if status := w.Code; status != http.StatusOK {
+		t.Errorf("unexpected status: got %v, want %v", status, http.StatusOK)
+	}
+
+	if !strings.Contains(logBuffer.String(), `{"key":"test","value":"test"}`) {
+		t.Errorf("log equals %v, should contain %v", logBuffer.String(), `{"key":"test","value":"test"}`)
+	}
+
+	if !strings.Contains(logBuffer.String(), `GET`) {
+		t.Errorf("log equals %v, should contain %v", logBuffer.String(), `GET`)
 	}
 }
