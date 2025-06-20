@@ -20,7 +20,9 @@ type databaseTestImplementation struct {
 	createCalls []struct {
 		key   string
 		value string
+		ttl   *int
 	}
+	createKey    string
 	createReturn bool
 	readCalls    []struct {
 		key string
@@ -30,6 +32,7 @@ type databaseTestImplementation struct {
 	updateCalls []struct {
 		key   string
 		value string
+		ttl   *int
 	}
 	updateReturn bool
 	deleteCalls  []struct {
@@ -38,12 +41,16 @@ type databaseTestImplementation struct {
 	deleteReturn bool
 }
 
-func (db *databaseTestImplementation) Create(key string, value string) bool {
+func (db *databaseTestImplementation) Create(data struct {
+	Value string `json:"value"`
+	Ttl   *int   `json:"ttl"`
+}) (bool, string) {
 	db.createCalls = append(db.createCalls, struct {
 		key   string
 		value string
-	}{key, value})
-	return db.createReturn
+		ttl   *int
+	}{db.createKey, data.Value, data.Ttl})
+	return db.createReturn, db.createKey
 }
 
 func (db *databaseTestImplementation) Read(key string) (string, bool) {
@@ -53,11 +60,16 @@ func (db *databaseTestImplementation) Read(key string) (string, bool) {
 	return db.readString, db.readReturn
 }
 
-func (db *databaseTestImplementation) Update(key string, value string) bool {
+func (db *databaseTestImplementation) Update(data struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Ttl   *int   `json:"ttl"`
+}) bool {
 	db.updateCalls = append(db.updateCalls, struct {
 		key   string
 		value string
-	}{key, value})
+		ttl   *int
+	}{data.Key, data.Value, data.Ttl})
 	return db.updateReturn
 }
 
@@ -73,6 +85,7 @@ func TestWrapper_createHandler(t *testing.T) {
 		name         string
 		key          string
 		value        string
+		ttl          int
 		status       int
 		createReturn bool
 		checkCalls   bool
@@ -81,22 +94,16 @@ func TestWrapper_createHandler(t *testing.T) {
 			name:         "Try to create non-existing key value pair",
 			key:          "testKey",
 			value:        "testValue",
+			ttl:          0,
 			status:       http.StatusCreated,
 			createReturn: true,
-			checkCalls:   true,
-		},
-		{
-			name:         "Try to create an existing key value pair",
-			key:          "testKey",
-			value:        "testValue",
-			status:       http.StatusBadRequest,
-			createReturn: false,
 			checkCalls:   true,
 		},
 		{
 			name:       "Send a bad request body",
 			key:        "testKey",
 			value:      `{"test": "test"}`,
+			ttl:        200,
 			status:     http.StatusBadRequest,
 			checkCalls: false,
 		},
@@ -108,7 +115,7 @@ func TestWrapper_createHandler(t *testing.T) {
 			r := &http.Request{
 				Method: "POST",
 				URL:    &url.URL{Path: "/v1/keys"},
-				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"key": "%s", "value": "%s"}`, tt.key, tt.value))),
+				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"key": "%s", "value": "%s", "ttl": %v}`, tt.key, tt.value, tt.ttl))),
 			}
 
 			// Set up database
@@ -116,8 +123,10 @@ func TestWrapper_createHandler(t *testing.T) {
 				createCalls: []struct {
 					key   string
 					value string
+					ttl   *int
 				}{},
 				createReturn: tt.createReturn,
+				createKey:    tt.key,
 			}
 			h := NewHandler(db, slog.New(slog.DiscardHandler))
 			h.ServeHTTP(w, r)
@@ -127,6 +136,18 @@ func TestWrapper_createHandler(t *testing.T) {
 			}
 
 			if tt.checkCalls {
+				var body createResponse
+				err := json.NewDecoder(w.Body).Decode(&body)
+				if err != nil {
+					t.Errorf("Failed to decode response body JSON: %v", err)
+				}
+
+				expected := createResponse{Key: tt.key}
+
+				if !reflect.DeepEqual(expected, body) {
+					t.Errorf("response body = %v; want %v", body, expected)
+				}
+
 				if len(db.createCalls) == 0 {
 					t.Errorf("Create() calls not created")
 				}
@@ -137,6 +158,10 @@ func TestWrapper_createHandler(t *testing.T) {
 
 				if db.createCalls[0].value != tt.value {
 					t.Errorf("Create() value = %v; want %v", db.createCalls[0].value, tt.value)
+				}
+
+				if *db.createCalls[0].ttl != tt.ttl {
+					t.Errorf("Create() TTL = %v; want %v", db.createCalls[0].ttl, tt.ttl)
 				}
 			}
 		})
@@ -194,13 +219,13 @@ func TestWrapper_readHandler(t *testing.T) {
 				t.Errorf("response code = %v; want %v", w.Code, tt.status)
 			}
 
-			var body response
+			var body readResponse
 			err := json.NewDecoder(w.Body).Decode(&body)
 			if err != nil {
 				t.Errorf("Failed to decode response body JSON: %v", err)
 			}
 
-			expected := response{Key: tt.key, Value: tt.value}
+			expected := readResponse{Key: tt.key, Value: tt.value}
 
 			if !reflect.DeepEqual(expected, body) {
 				t.Errorf("response body = %v; want %v", body, expected)
@@ -224,6 +249,7 @@ func TestWrapper_updateHandler(t *testing.T) {
 		name         string
 		key          string
 		value        string
+		ttl          int
 		status       int
 		updateReturn bool
 		checkCalls   bool
@@ -232,6 +258,7 @@ func TestWrapper_updateHandler(t *testing.T) {
 			name:         "Update non-existing key value pair",
 			key:          "testKey",
 			value:        "testValue",
+			ttl:          40,
 			status:       http.StatusCreated,
 			updateReturn: false,
 			checkCalls:   true,
@@ -240,6 +267,7 @@ func TestWrapper_updateHandler(t *testing.T) {
 			name:         "Update an existing key value pair",
 			key:          "testKey",
 			value:        "testValue",
+			ttl:          100,
 			status:       http.StatusOK,
 			updateReturn: true,
 			checkCalls:   true,
@@ -248,6 +276,7 @@ func TestWrapper_updateHandler(t *testing.T) {
 			name:       "Send a bad request body",
 			key:        "testKey",
 			value:      `{"test": "test"}`,
+			ttl:        500,
 			status:     http.StatusBadRequest,
 			checkCalls: false,
 		},
@@ -259,7 +288,7 @@ func TestWrapper_updateHandler(t *testing.T) {
 			r := &http.Request{
 				Method: "PUT",
 				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
-				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s"}`, tt.value))),
+				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, tt.value, tt.ttl))),
 			}
 
 			// Set up database
@@ -267,6 +296,7 @@ func TestWrapper_updateHandler(t *testing.T) {
 				updateCalls: []struct {
 					key   string
 					value string
+					ttl   *int
 				}{},
 				updateReturn: tt.updateReturn,
 			}
@@ -289,6 +319,10 @@ func TestWrapper_updateHandler(t *testing.T) {
 
 				if db.updateCalls[0].value != tt.value {
 					t.Errorf("Update() value = %v; want %v", db.updateCalls[0].value, tt.value)
+				}
+
+				if *db.updateCalls[0].ttl != tt.ttl {
+					t.Errorf("Update() TTL = %v; want %v", db.updateCalls[0].ttl, tt.ttl)
 				}
 			}
 		})
@@ -381,11 +415,21 @@ func TestLoggingMiddleware(t *testing.T) {
 		t.Errorf("unexpected status: got %v, want %v", status, http.StatusOK)
 	}
 
-	if !strings.Contains(logBuffer.String(), `{"key":"test","value":"test"}`) {
-		t.Errorf("log equals %v, should contain %v", logBuffer.String(), `{"key":"test","value":"test"}`)
+	var logLine map[string]any
+	err := json.Unmarshal([]byte(logBuffer.String()), &logLine)
+	if err != nil {
+		t.Errorf("Error unmarshalling log: %v", err)
+	}
+	expectedBody := map[string]any{
+		"key":   "test",
+		"value": "test",
 	}
 
-	if !strings.Contains(logBuffer.String(), `GET`) {
+	if reflect.DeepEqual(logLine["Body"], expectedBody) == false {
+		t.Errorf("Body does not match expected body: got %v, want %v", logLine, expectedBody)
+	}
+
+	if logLine["method"] != "GET" {
 		t.Errorf("log equals %v, should contain %v", logBuffer.String(), `GET`)
 	}
 }

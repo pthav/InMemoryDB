@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	"io"
 	"log/slog"
@@ -10,20 +12,37 @@ import (
 )
 
 type database interface {
-	Create(key string, value string) bool
+	Create(data struct {
+		Value string `json:"value"`
+		Ttl   *int   `json:"ttl"`
+	}) (bool, string)
 	Read(key string) (string, bool)
-	Update(key string, value string) bool
+	Update(data struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+		Ttl   *int   `json:"ttl"`
+	}) bool
 	Delete(key string) bool
 }
 
-type response struct {
+type createResponse struct {
+	Key string `json:"key"`
+}
+
+type readResponse struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
-type requestData struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+type createRequest struct {
+	Value string `json:"value" validate:"required"`
+	Ttl   *int   `json:"ttl"`
+}
+
+type updateRequest struct {
+	Key   string `json:"key" validate:"required"`
+	Value string `json:"value" validate:"required"`
+	Ttl   *int   `json:"ttl"`
 }
 
 type Wrapper struct {
@@ -54,18 +73,39 @@ func (h *Wrapper) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 
 // setHandler use request key and value from the request body to set the key value pair in the database
 func (h *Wrapper) createHandler(w http.ResponseWriter, r *http.Request) {
-	var rData requestData
+	var rData createRequest
 	err := json.NewDecoder(r.Body).Decode(&rData)
-	if err == nil {
-		set := h.db.Create(rData.Key, rData.Value)
-		if set {
-			w.WriteHeader(http.StatusCreated)
-		} else {
-			w.WriteHeader(http.StatusBadRequest)
-		}
-	} else {
+	w.Header().Set("Content-Type", "application/json")
+
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	// Validate the input
+	validate := validator.New()
+	err = validate.Struct(rData)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Validation errors when parsing create request: %s", err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	set, key := h.db.Create(struct {
+		Value string `json:"value"`
+		Ttl   *int   `json:"ttl"`
+	}(rData))
+
+	if !set {
+		http.Error(w, "Could not add value to store", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	response := createResponse{Key: key}
+
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
@@ -74,14 +114,14 @@ func (h *Wrapper) readHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 	value, loaded := h.db.Read(key)
-	response := response{Key: key, Value: value}
+	response := readResponse{Key: key, Value: value}
 	w.Header().Set("Content-Type", "application/json")
 
-	if loaded {
-		w.WriteHeader(http.StatusOK)
-	} else {
+	if !loaded {
 		w.WriteHeader(http.StatusNotFound)
 	}
+
+	w.WriteHeader(http.StatusOK)
 
 	err := json.NewEncoder(w).Encode(response)
 	if err != nil {
@@ -91,21 +131,35 @@ func (h *Wrapper) readHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // setHandler use request key and value from the request body to set the key value pair in the database
+// Users are allowed to update the ttl through "PUT" operations.
 func (h *Wrapper) updateHandler(w http.ResponseWriter, r *http.Request) {
-	var rData requestData
+	var rData updateRequest
 	err := json.NewDecoder(r.Body).Decode(&rData)
 	vars := mux.Vars(r)
 	rData.Key = vars["key"]
-	if err == nil {
-		set := h.db.Update(rData.Key, rData.Value)
-		if set {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			w.WriteHeader(http.StatusCreated)
-		}
-	} else {
+
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	// Validate the input
+	validate := validator.New()
+	err = validate.Struct(rData)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Validation errors when parsing update request: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	set := h.db.Update(struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+		Ttl   *int   `json:"ttl"`
+	}(rData))
+	if set {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusCreated)
 	}
 }
 
@@ -121,11 +175,12 @@ func (h *Wrapper) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// loggingMiddleware logs all incoming requests
 func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Read body data
 		if r.Body != nil && r.ContentLength != 0 {
-			var rData requestData
+			var rData map[string]any
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -136,7 +191,7 @@ func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			} else {
-				// Readd body data to request
+				// Read body data to request
 				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 				h.logger.Info(
 					"incoming request",

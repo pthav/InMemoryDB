@@ -6,8 +6,8 @@ import (
 
 func TestInMemoryDatabase_Create(t *testing.T) {
 	type test []struct {
-		key         string
 		value       string
+		ttl         *int
 		want        bool
 		loadedValue string
 	}
@@ -20,26 +20,8 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 			name: "Create a single new entry",
 			cases: test{
 				{
-					key:         "key",
 					value:       "value",
 					want:        true,
-					loadedValue: "value",
-				},
-			},
-		},
-		{
-			name: "Create an existing entry",
-			cases: test{
-				{
-					key:         "key",
-					value:       "value",
-					want:        true,
-					loadedValue: "value",
-				},
-				{
-					key:         "key",
-					value:       "hello",
-					want:        false,
 					loadedValue: "value",
 				},
 			},
@@ -50,11 +32,20 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			i := NewInMemoryDatabase()
 			for _, testCase := range tt.cases {
-				if loaded := i.Create(testCase.key, testCase.value); loaded != testCase.want {
+				data := struct {
+					Value string `json:"value"`
+					Ttl   *int   `json:"ttl"`
+				}{
+					Value: testCase.value,
+					Ttl:   testCase.ttl,
+				}
+
+				loaded, key := i.Create(data)
+				if loaded != testCase.want {
 					t.Errorf("Create() = %v, want %v", loaded, testCase.want)
 				}
 
-				val, loaded := i.store.Load(testCase.key)
+				val, loaded := i.store.Load(key)
 				if val != testCase.loadedValue {
 					t.Errorf("Error loading value: Create() = %v, want %v where loaded = %v", val, testCase.loadedValue, loaded)
 				}
@@ -99,7 +90,14 @@ func TestInMemoryDatabase_Read(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := NewInMemoryDatabase()
-			i.Create("key", "value")
+			i.Update(struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+				Ttl   *int   `json:"ttl"`
+			}{
+				Key:   "key",
+				Value: "value",
+			})
 			for _, testCase := range tt.cases {
 				if val, loaded := i.Read(testCase.key); loaded != testCase.wantLoaded || val != testCase.wantValue {
 					t.Errorf("Read() = %v + %v, want %v + %v", testCase.wantValue, testCase.wantLoaded, val, loaded)
@@ -113,6 +111,7 @@ func TestInMemoryDatabase_Update(t *testing.T) {
 	type test []struct {
 		key         string
 		value       string
+		ttl         *int
 		want        bool
 		loadedValue string
 	}
@@ -124,6 +123,12 @@ func TestInMemoryDatabase_Update(t *testing.T) {
 		{
 			name: "Update an existing entry",
 			cases: test{
+				{
+					key:         "key",
+					value:       "value",
+					want:        false,
+					loadedValue: "value",
+				},
 				{
 					key:         "key",
 					value:       "value",
@@ -148,9 +153,17 @@ func TestInMemoryDatabase_Update(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := NewInMemoryDatabase()
-			i.Create("key", "value")
 			for _, testCase := range tt.cases {
-				if loaded := i.Update(testCase.key, testCase.value); loaded != testCase.want {
+				data := struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+					Ttl   *int   `json:"ttl"`
+				}{
+					Key:   testCase.key,
+					Value: testCase.value,
+					Ttl:   testCase.ttl,
+				}
+				if loaded := i.Update(data); loaded != testCase.want {
 					t.Errorf("Update() = %v, want %v", loaded, testCase.want)
 				}
 
@@ -196,7 +209,14 @@ func TestInMemoryDatabase_Delete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := NewInMemoryDatabase()
-			i.Create("key", "value")
+			i.Update(struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+				Ttl   *int   `json:"ttl"`
+			}{
+				Key:   "key",
+				Value: "value",
+			})
 			for _, testCase := range tt.cases {
 				if loaded := i.Delete(testCase.key); loaded != testCase.want {
 					t.Errorf("Delete() = %v, want %v", loaded, testCase.want)
