@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+type databaseEntry struct {
+	value string
+	ttl   int64
+}
+
 // InMemoryDatabase stores data in memory using a sync map to ensure thread safety
 type InMemoryDatabase struct {
 	store sync.Map
@@ -25,35 +30,55 @@ func NewInMemoryDatabase() *InMemoryDatabase {
 // Create a key value pair in the database
 func (i *InMemoryDatabase) Create(data struct {
 	Value string `json:"value"`
-	Ttl   *int   `json:"ttl"`
+	Ttl   *int64 `json:"ttl"`
 }) (bool, string) {
 	id := uuid.New().String()
-	_, loaded := i.store.LoadOrStore(id, data.Value)
+	newEntry := databaseEntry{value: data.Value}
+	var ttl int64
+	if data.Ttl != nil {
+		ttl = *data.Ttl + time.Now().Unix()
+		newEntry.ttl = ttl
+	}
+	_, loaded := i.store.LoadOrStore(id, newEntry)
 	if data.Ttl != nil && !loaded {
-		i.ttl.Push(keyTtl{id, int64(*data.Ttl) + time.Now().Unix()})
+		i.ttl.Push(ttlHeapData{id, ttl})
 	}
 	return !loaded, id
 }
 
 // Get a value from the database by key
-func (i *InMemoryDatabase) Read(key string) (string, bool) {
+func (i *InMemoryDatabase) Get(key string) (string, bool) {
 	value, loaded := i.store.Load(key)
 	if loaded {
-		return value.(string), true
+		return value.(databaseEntry).value, true
 	}
 	return "", false
 }
 
-// Update a key value pair in the database if it exists. Otherwise, Create a key value pair.
-func (i *InMemoryDatabase) Update(data struct {
+func (i *InMemoryDatabase) GetTTL(key string) (int64, bool) {
+	value, loaded := i.store.Load(key)
+	if loaded {
+		return value.(databaseEntry).ttl, true
+	}
+	return 0, false
+}
+
+// Put a key value pair into the database
+func (i *InMemoryDatabase) Put(data struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
-	Ttl   *int   `json:"ttl"`
+	Ttl   *int64 `json:"ttl"`
 }) bool {
 	_, loaded := i.store.LoadOrStore(data.Key, data.Value)
-	i.store.Store(data.Key, data.Value)
+	newEntry := databaseEntry{value: data.Value}
+	var ttl int64
 	if data.Ttl != nil {
-		i.ttl.Push(keyTtl{data.Key, int64(*data.Ttl) + time.Now().Unix()})
+		ttl = *data.Ttl + time.Now().Unix()
+		newEntry.ttl = ttl
+	}
+	i.store.Store(data.Key, databaseEntry{data.Value, ttl})
+	if data.Ttl != nil {
+		i.ttl.Push(ttlHeapData{data.Key, ttl})
 	}
 	return loaded
 }

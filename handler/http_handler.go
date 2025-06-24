@@ -14,35 +14,41 @@ import (
 type database interface {
 	Create(data struct {
 		Value string `json:"value"`
-		Ttl   *int   `json:"ttl"`
+		Ttl   *int64 `json:"ttl"`
 	}) (bool, string)
-	Read(key string) (string, bool)
-	Update(data struct {
+	Get(key string) (string, bool)
+	Put(data struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
-		Ttl   *int   `json:"ttl"`
+		Ttl   *int64 `json:"ttl"`
 	}) bool
 	Delete(key string) bool
+	GetTTL(key string) (int64, bool)
 }
 
-type createResponse struct {
+type postResponse struct {
 	Key string `json:"key"`
 }
 
-type readResponse struct {
+type getResponse struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
-type createRequest struct {
-	Value string `json:"value" validate:"required"`
-	Ttl   *int   `json:"ttl"`
+type getTTLResponse struct {
+	Key string `json:"key"`
+	TTL int64  `json:"ttl"`
 }
 
-type updateRequest struct {
+type postRequest struct {
+	Value string `json:"value" validate:"required"`
+	Ttl   *int64 `json:"ttl"`
+}
+
+type putRequest struct {
 	Key   string `json:"key" validate:"required"`
 	Value string `json:"value" validate:"required"`
-	Ttl   *int   `json:"ttl"`
+	Ttl   *int64 `json:"ttl"`
 }
 
 type Wrapper struct {
@@ -55,14 +61,16 @@ type Wrapper struct {
 func NewHandler(db database, logger *slog.Logger) *Wrapper {
 	handler := &Wrapper{db: db, logger: logger}
 	handler.router = mux.NewRouter()
-	handler.router.HandleFunc("/v1/keys", handler.createHandler).
+	handler.router.HandleFunc("/v1/keys", handler.postHandler).
 		Methods("POST")
-	handler.router.HandleFunc("/v1/keys/{key}", handler.readHandler).
+	handler.router.HandleFunc("/v1/keys/{key}", handler.getHandler).
 		Methods("GET")
-	handler.router.HandleFunc("/v1/keys/{key}", handler.updateHandler).
+	handler.router.HandleFunc("/v1/keys/{key}", handler.putHandler).
 		Methods("PUT")
 	handler.router.HandleFunc("/v1/keys/{key}", handler.deleteHandler).
 		Methods("DELETE")
+	handler.router.HandleFunc("/v1/ttl/{key}", handler.getTTLHandler).
+		Methods("GET")
 	handler.router.Use(handler.loggingMiddleware)
 	return handler
 }
@@ -72,8 +80,8 @@ func (h *Wrapper) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 }
 
 // setHandler use request key and value from the request body to set the key value pair in the database
-func (h *Wrapper) createHandler(w http.ResponseWriter, r *http.Request) {
-	var rData createRequest
+func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
+	var rData postRequest
 	err := json.NewDecoder(r.Body).Decode(&rData)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -92,7 +100,7 @@ func (h *Wrapper) createHandler(w http.ResponseWriter, r *http.Request) {
 
 	set, key := h.db.Create(struct {
 		Value string `json:"value"`
-		Ttl   *int   `json:"ttl"`
+		Ttl   *int64 `json:"ttl"`
 	}(rData))
 
 	if !set {
@@ -101,7 +109,7 @@ func (h *Wrapper) createHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	response := createResponse{Key: key}
+	response := postResponse{Key: key}
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
@@ -110,11 +118,11 @@ func (h *Wrapper) createHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // getHandler use request key and return associated value if it exists
-func (h *Wrapper) readHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
-	value, loaded := h.db.Read(key)
-	response := readResponse{Key: key, Value: value}
+	value, loaded := h.db.Get(key)
+	response := getResponse{Key: key, Value: value}
 	w.Header().Set("Content-Type", "application/json")
 
 	if !loaded {
@@ -132,8 +140,8 @@ func (h *Wrapper) readHandler(w http.ResponseWriter, r *http.Request) {
 
 // setHandler use request key and value from the request body to set the key value pair in the database
 // Users are allowed to update the ttl through "PUT" operations.
-func (h *Wrapper) updateHandler(w http.ResponseWriter, r *http.Request) {
-	var rData updateRequest
+func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
+	var rData putRequest
 	err := json.NewDecoder(r.Body).Decode(&rData)
 	vars := mux.Vars(r)
 	rData.Key = vars["key"]
@@ -151,10 +159,10 @@ func (h *Wrapper) updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	set := h.db.Update(struct {
+	set := h.db.Put(struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
-		Ttl   *int   `json:"ttl"`
+		Ttl   *int64 `json:"ttl"`
 	}(rData))
 	if set {
 		w.WriteHeader(http.StatusOK)
@@ -175,10 +183,30 @@ func (h *Wrapper) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Wrapper) getTTLHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	key := vars["key"]
+	ttl, loaded := h.db.GetTTL(key)
+	response := getTTLResponse{Key: key, TTL: ttl}
+	w.Header().Set("Content-Type", "application/json")
+
+	if !loaded {
+		w.WriteHeader(http.StatusNotFound)
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 // loggingMiddleware logs all incoming requests
 func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read body data
+		// Get body data
 		if r.Body != nil && r.ContentLength != 0 {
 			var rData map[string]any
 			bodyBytes, err := io.ReadAll(r.Body)
@@ -191,7 +219,7 @@ func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			} else {
-				// Read body data to request
+				// Get body data to request
 				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 				h.logger.Info(
 					"incoming request",

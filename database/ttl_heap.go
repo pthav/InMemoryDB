@@ -1,11 +1,11 @@
 package database
 
-type keyTtl struct {
+type ttlHeapData struct {
 	key string
 	ttl int64
 }
 
-type ttlHeap []keyTtl
+type ttlHeap []ttlHeapData
 
 func (t ttlHeap) Len() int {
 	return len(t)
@@ -20,7 +20,7 @@ func (t ttlHeap) Swap(i, j int) {
 }
 
 func (t *ttlHeap) Push(x any) {
-	*t = append(*t, x.(keyTtl))
+	*t = append(*t, x.(ttlHeapData))
 }
 
 func (t *ttlHeap) Pop() any {
