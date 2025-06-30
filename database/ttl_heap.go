@@ -28,3 +28,10 @@ func (t *ttlHeap) Pop() any {
 	*t = (*t)[:t.Len()-1]
 	return last
 }
+
+func (t *ttlHeap) Peak() any {
+	if len(*t) != 0 {
+		return (*t)[0]
+	}
+	return nil
+}

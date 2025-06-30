@@ -15,15 +15,15 @@ type database interface {
 	Create(data struct {
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
-	}) (bool, string)
-	Get(key string) (string, bool)
+	}) (bool, string) // Create a UUID for the value and add it if it doesn't exist
+	Get(key string) (string, bool) // Get the associated value if it exists and hasn't expired
 	Put(data struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
-	}) bool
-	Delete(key string) bool
-	GetTTL(key string) (int64, bool)
+	}) bool // Put a key, value pair
+	Delete(key string) bool          // Delete the key, value pair
+	GetTTL(key string) (int64, bool) // Get the remaining TTL for a given key if it has a TTL
 }
 
 type postResponse struct {
@@ -98,6 +98,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward the post request
 	set, key := h.db.Create(struct {
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
@@ -159,6 +160,7 @@ func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward the put request
 	set := h.db.Put(struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`

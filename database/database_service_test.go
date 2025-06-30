@@ -8,10 +8,9 @@ import (
 
 func TestInMemoryDatabase_Create(t *testing.T) {
 	type test []struct {
-		value       string
-		ttl         *int64
-		want        bool
-		loadedValue string
+		value       string // The value for the Create
+		ttl         *int64 // The ttl for the Create
+		loadedValue string // What value should be loaded after the Create
 	}
 
 	tests := []struct {
@@ -23,7 +22,6 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 			cases: test{
 				{
 					value:       "value",
-					want:        true,
 					loadedValue: "value",
 				},
 			},
@@ -42,11 +40,7 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 					Ttl:   testCase.ttl,
 				}
 
-				loaded, key := i.Create(data)
-				if loaded != testCase.want {
-					t.Errorf("Create() = %v, want %v", loaded, testCase.want)
-				}
-
+				_, key := i.Create(data)
 				val, loaded := i.store.Load(key)
 				if val.(databaseEntry).value != testCase.loadedValue {
 					t.Errorf("Error loading value: Create() = %v, want %v where loaded = %v", val, testCase.loadedValue, loaded)
@@ -58,9 +52,11 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 
 func TestInMemoryDatabase_Get(t *testing.T) {
 	type test []struct {
-		key        string
-		wantValue  string
-		wantLoaded bool
+		key        string // The key for the Get
+		wantValue  string // The expected value for the Get
+		wantLoaded bool   // True if it should return a value and false otherwise
+		addTTL     bool   // Whether to add a TTL to the Put or not
+		ttl        int64  // The ttl for the Put
 	}
 
 	tests := []struct {
@@ -68,12 +64,37 @@ func TestInMemoryDatabase_Get(t *testing.T) {
 		cases test
 	}{
 		{
-			name: "Get an existing entry",
+			name: "Get an existing entry with no TTL",
 			cases: test{
 				{
 					key:        "key",
 					wantValue:  "value",
 					wantLoaded: true,
+					addTTL:     false,
+				},
+			},
+		},
+		{
+			name: "Get an existing entry with valid TTL",
+			cases: test{
+				{
+					key:        "key",
+					wantValue:  "value",
+					wantLoaded: true,
+					addTTL:     true,
+					ttl:        100,
+				},
+			},
+		},
+		{
+			name: "Get an existing entry with expired TTL",
+			cases: test{
+				{
+					key:        "key",
+					wantValue:  "value",
+					wantLoaded: false,
+					addTTL:     true,
+					ttl:        -1,
 				},
 			},
 		},
@@ -91,31 +112,41 @@ func TestInMemoryDatabase_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase()
-			i.Put(struct {
-				Key   string `json:"key"`
-				Value string `json:"value"`
-				Ttl   *int64 `json:"ttl"`
-			}{
-				Key:   "key",
-				Value: "value",
-			})
 			for _, testCase := range tt.cases {
-				if val, loaded := i.Get(testCase.key); loaded != testCase.wantLoaded || val != testCase.wantValue {
-					t.Errorf("Get() = %v + %v, want %v + %v", testCase.wantValue, testCase.wantLoaded, val, loaded)
+				i := NewInMemoryDatabase()
+				var ttl *int64
+				if testCase.addTTL {
+					ttl = &testCase.ttl
+				}
+				i.Put(struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+					Ttl   *int64 `json:"ttl"`
+				}{
+					Key:   "key",
+					Value: "value",
+					Ttl:   ttl,
+				})
+
+				val, loaded := i.Get(testCase.key)
+				if loaded != testCase.wantLoaded {
+					t.Errorf("Get() = %v, want %v for whether it was loaded or not", loaded, testCase.wantLoaded)
+				}
+				if testCase.wantLoaded && (loaded == false || val != testCase.wantValue) {
+					t.Errorf("Get() = %v, want %v for loaded value", val, testCase.wantValue)
 				}
 			}
 		})
 	}
 }
 
-func TestInMemoryDatabase_Update(t *testing.T) {
+func TestInMemoryDatabase_Put(t *testing.T) {
 	type test []struct {
-		key         string
-		value       string
-		ttl         *int64
-		want        bool
-		loadedValue string
+		key         string // Key for Put
+		value       string // Value for Put
+		ttl         *int64 // TTL for Put
+		want        bool   // True if it should be updated and false if it should be created
+		loadedValue string // The value that should be loaded after the Put
 	}
 
 	tests := []struct {
@@ -180,8 +211,8 @@ func TestInMemoryDatabase_Update(t *testing.T) {
 
 func TestInMemoryDatabase_Delete(t *testing.T) {
 	type test []struct {
-		key  string
-		want bool
+		key  string // Key for delete
+		want bool   // Expectation for whether it was deleted or not
 	}
 
 	tests := []struct {
@@ -230,9 +261,9 @@ func TestInMemoryDatabase_Delete(t *testing.T) {
 
 func TestInMemoryDatabase_GetTTL(t *testing.T) {
 	type test []struct {
-		key        string
-		wantValue  int64
-		wantLoaded bool
+		key        string // Key for get
+		wantValue  int64  // Expected TTL
+		wantLoaded bool   // Expected loaded
 	}
 
 	tests := []struct {
@@ -259,12 +290,34 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Get an expired entry",
+			cases: test{
+				{
+					key:        "yo",
+					wantValue:  0,
+					wantLoaded: false,
+				},
+			},
+		},
+		{
+			name: "Get an entry with no expiration",
+			cases: test{
+				{
+					key:        "noExpire",
+					wantValue:  0,
+					wantLoaded: false,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var ttl int64 = 100
 			i := NewInMemoryDatabase()
+
+			// Add an entry with an expiration
 			i.Put(struct {
 				Key   string `json:"key"`
 				Value string `json:"value"`
@@ -274,9 +327,20 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 				Value: "value",
 				Ttl:   &ttl,
 			})
+
+			// Add an entry with no expiration
+			i.Put(struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+				Ttl   *int64 `json:"ttl"`
+			}{
+				Key:   "noExpire",
+				Value: "value",
+			})
+
 			for _, testCase := range tt.cases {
 				if val, loaded := i.GetTTL(testCase.key); loaded != testCase.wantLoaded || val < testCase.wantValue {
-					t.Errorf("Get() = %v + %v, want >=%v + %v", testCase.wantValue, testCase.wantLoaded, val, loaded)
+					t.Errorf("Get() = %v, %v, want >=%v, %v", testCase.wantValue, testCase.wantLoaded, val, loaded)
 				}
 			}
 		})
@@ -285,14 +349,14 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 
 func TestInMemoryDatabase_Heap(t *testing.T) {
 	type createCall struct {
-		value string
-		ttl   int64
-		index int
+		value string // Value for the Create
+		ttl   int64  // TTL for the Create
+		index int    // The expected index in the final post-creation TTL increasing order
 	}
-	type updateCall struct {
-		key   string
-		value string
-		ttl   int64
+	type putCall struct {
+		key   string // Key for the Put
+		value string // Value for the Put
+		ttl   int64  // TTL for the Put
 	}
 
 	tests := []struct {
@@ -315,11 +379,11 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 		{
 			name: "Put Only",
 			functions: []any{
-				&updateCall{"hello1", "hello1", 10},
-				&updateCall{"hello2", "hello2", 20},
-				&updateCall{"hello3", "hello3", 30},
-				&updateCall{"hello4", "hello4", 40},
-				&updateCall{"hello3", "hello3", 50},
+				&putCall{"hello1", "hello1", 10},
+				&putCall{"hello2", "hello2", 20},
+				&putCall{"hello3", "hello3", 30},
+				&putCall{"hello4", "hello4", 40},
+				&putCall{"hello3", "hello3", 50},
 			},
 			expectedOrder: map[string]int{
 				"hello1": 0,
@@ -333,9 +397,9 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 			functions: []any{
 				&createCall{"hello1", 10, 0},
 				&createCall{"hello2", 20, 1},
-				&updateCall{"hello3", "hello3", 30},
-				&updateCall{"hello4", "hello4", 40},
-				&updateCall{"hello3", "hello3", 50},
+				&putCall{"hello3", "hello3", 30},
+				&putCall{"hello4", "hello4", 40},
+				&putCall{"hello3", "hello3", 50},
 			},
 			expectedOrder: map[string]int{
 				"hello4": 2,
@@ -359,37 +423,41 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 					}
 					_, uuid := i.Create(arguments)
 					tt.expectedOrder[uuid] = function.(*createCall).index
-				case *updateCall:
+				case *putCall:
 					arguments := struct {
 						Key   string `json:"key"`
 						Value string `json:"value"`
 						Ttl   *int64 `json:"ttl"`
 					}{
-						function.(*updateCall).key,
-						function.(*updateCall).value,
-						&function.(*updateCall).ttl,
+						function.(*putCall).key,
+						function.(*putCall).value,
+						&function.(*putCall).ttl,
 					}
 					i.Put(arguments)
 				}
 			}
 
+			// Get all ttlHeap information
 			var copyHeap []ttlHeapData
 			for _, data := range *i.ttl {
 				key := data.key
 				dbEntry, loaded := i.store.Load(key)
-				if loaded && dbEntry.(databaseEntry).ttl == data.ttl {
+				if loaded && *dbEntry.(databaseEntry).ttl == data.ttl {
 					copyHeap = append(copyHeap, data)
 				}
 			}
 
+			// Sort ttlHeap in decreasing order by the TTL value
 			sort.Slice(copyHeap, func(i, j int) bool {
 				return copyHeap[i].ttl < copyHeap[j].ttl
 			})
 
+			// Make sure the right number of values is stored
 			if len(copyHeap) != len(tt.expectedOrder) {
 				t.Errorf("Expected copyHeap size to be %v got %v", len(tt.expectedOrder), len(copyHeap))
 			}
 
+			// Check the actual order
 			for i, actual := range copyHeap {
 				expectedIndex, ok := tt.expectedOrder[actual.key]
 				if !ok {
@@ -398,6 +466,129 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 				if expectedIndex != i {
 					t.Errorf("Got key %v at index %v instead of %v", actual.key, expectedIndex, i)
 				}
+			}
+		})
+	}
+}
+
+func TestInMemoryDatabase_Cleanup(t *testing.T) {
+	type createCall struct {
+		value string // Value for the Create
+		ttl   int64  // TTL for the Create
+	}
+	type putCall struct {
+		key   string // Key for the Put
+		value string // Value for the Put
+		ttl   int64  // TTL for the Put
+	}
+
+	type checkDeleted struct {
+		delay   int64 // Time after initialization to check
+		numLeft int   // How many should remain
+	}
+
+	tests := []struct {
+		name      string
+		numKeys   int
+		functions []any
+		check     []checkDeleted
+		final     int64
+	}{
+		{
+			name: "Create Plus Put",
+			functions: []any{
+				&createCall{"hello1", 1},
+				&createCall{"hello2", 2},
+				&putCall{"hello3", "hello3", 3},
+				&putCall{"hello4", "hello4", 4},
+				&putCall{"hello3", "hello3", 5},
+			},
+			check: []checkDeleted{
+				{1, 3},
+				{2, 2},
+				{3, 2},
+				{4, 1},
+				{5, 0},
+			},
+			final: 6,
+		},
+		{
+			name: "Create Only",
+			functions: []any{
+				&createCall{"hello1", 1},
+				&createCall{"hello2", 2},
+			},
+			check: []checkDeleted{
+				{1, 1},
+				{2, 0},
+			},
+			final: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := NewInMemoryDatabase()
+			for _, function := range tt.functions {
+				switch function.(type) {
+				case *createCall:
+					arguments := struct {
+						Value string `json:"value"`
+						Ttl   *int64 `json:"ttl"`
+					}{
+						function.(*createCall).value,
+						&function.(*createCall).ttl,
+					}
+					i.Create(arguments)
+				case *putCall:
+					arguments := struct {
+						Key   string `json:"key"`
+						Value string `json:"value"`
+						Ttl   *int64 `json:"ttl"`
+					}{
+						function.(*putCall).key,
+						function.(*putCall).value,
+						&function.(*putCall).ttl,
+					}
+					i.Put(arguments)
+				}
+			}
+			timeAfterCreation := time.Now().Unix()
+
+			// Get initial count
+			var count int
+			i.store.Range(func(k, v interface{}) bool {
+				count++
+				return true
+			})
+
+			t.Logf("Number of keys: %v", count)
+			if count == 0 {
+				t.Errorf("Store is empty")
+			}
+
+			// Check all deletions occur
+			for c := range tt.check {
+				next := tt.check[c].delay
+				delay := next - (time.Now().Unix() - timeAfterCreation)
+				if delay > 0 {
+					<-time.After(time.Duration(delay)*time.Second + 500*time.Millisecond)
+				}
+
+				i.mu.Lock()
+
+				// Get number of remaining entries
+				var count int
+				i.store.Range(func(k, v interface{}) bool {
+					count++
+					return true
+				})
+
+				if count != len(*i.ttl) {
+					t.Errorf("Expected %v left but got %v. Len(ttlHeap) = %v", tt.check[c].numLeft, count, len(*i.ttl))
+				}
+
+				i.mu.Unlock()
 			}
 		})
 	}
