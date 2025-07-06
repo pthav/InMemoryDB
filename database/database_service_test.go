@@ -1,6 +1,10 @@
 package database
 
 import (
+	"container/heap"
+	"encoding/json"
+	"os"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -41,8 +45,8 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 				}
 
 				_, key := i.Create(data)
-				val, loaded := i.store.Load(key)
-				if val.(databaseEntry).value != testCase.loadedValue {
+				val, loaded := i.load(key)
+				if val.value != testCase.loadedValue {
 					t.Errorf("Error loading value: Create() = %v, want %v where loaded = %v", val, testCase.loadedValue, loaded)
 				}
 			}
@@ -142,8 +146,8 @@ func TestInMemoryDatabase_Get(t *testing.T) {
 
 func TestInMemoryDatabase_Put(t *testing.T) {
 	type test []struct {
-		key         string // Key for Put
-		value       string // Value for Put
+		key         string // key for Put
+		value       string // value for Put
 		ttl         *int64 // TTL for Put
 		want        bool   // True if it should be updated and false if it should be created
 		loadedValue string // The value that should be loaded after the Put
@@ -200,8 +204,8 @@ func TestInMemoryDatabase_Put(t *testing.T) {
 					t.Errorf("Put() = %v, want %v", loaded, testCase.want)
 				}
 
-				val, loaded := i.store.Load(testCase.key)
-				if val.(databaseEntry).value != testCase.loadedValue {
+				val, loaded := i.load(testCase.key)
+				if val.value != testCase.loadedValue {
 					t.Errorf("Error loading value: Put() = %v, want %v where loaded = %v", val, testCase.loadedValue, loaded)
 				}
 			}
@@ -211,7 +215,7 @@ func TestInMemoryDatabase_Put(t *testing.T) {
 
 func TestInMemoryDatabase_Delete(t *testing.T) {
 	type test []struct {
-		key  string // Key for delete
+		key  string // key for delete
 		want bool   // Expectation for whether it was deleted or not
 	}
 
@@ -261,9 +265,9 @@ func TestInMemoryDatabase_Delete(t *testing.T) {
 
 func TestInMemoryDatabase_GetTTL(t *testing.T) {
 	type test []struct {
-		key        string // Key for get
-		wantValue  int64  // Expected TTL
+		key        string // key for get
 		wantLoaded bool   // Expected loaded
+		delay      int64  // How long to delay before sending a GetTTL call
 	}
 
 	tests := []struct {
@@ -275,7 +279,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 			cases: test{
 				{
 					key:        "key",
-					wantValue:  100 + time.Now().Unix(),
+					delay:      2,
 					wantLoaded: true,
 				},
 			},
@@ -285,7 +289,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 			cases: test{
 				{
 					key:        "yo",
-					wantValue:  0,
+					delay:      0,
 					wantLoaded: false,
 				},
 			},
@@ -295,7 +299,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 			cases: test{
 				{
 					key:        "yo",
-					wantValue:  0,
+					delay:      0,
 					wantLoaded: false,
 				},
 			},
@@ -305,7 +309,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 			cases: test{
 				{
 					key:        "noExpire",
-					wantValue:  0,
+					delay:      0,
 					wantLoaded: false,
 				},
 			},
@@ -316,17 +320,6 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var ttl int64 = 100
 			i := NewInMemoryDatabase()
-
-			// Add an entry with an expiration
-			i.Put(struct {
-				Key   string `json:"key"`
-				Value string `json:"value"`
-				Ttl   *int64 `json:"ttl"`
-			}{
-				Key:   "key",
-				Value: "value",
-				Ttl:   &ttl,
-			})
 
 			// Add an entry with no expiration
 			i.Put(struct {
@@ -339,8 +332,22 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 			})
 
 			for _, testCase := range tt.cases {
-				if val, loaded := i.GetTTL(testCase.key); loaded != testCase.wantLoaded || val < testCase.wantValue {
-					t.Errorf("Get() = %v, %v, want >=%v, %v", testCase.wantValue, testCase.wantLoaded, val, loaded)
+				// Add an entry with a ttl of 100
+				i.Put(struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+					Ttl   *int64 `json:"ttl"`
+				}{
+					Key:   "key",
+					Value: "value",
+					Ttl:   &ttl,
+				})
+
+				// Wait
+				<-time.After(time.Duration(testCase.delay) * time.Second)
+
+				if val, loaded := i.GetTTL(testCase.key); loaded != testCase.wantLoaded || val < testCase.delay {
+					t.Errorf("Get() = %v, %v, want >=%v, %v", ttl-testCase.delay, testCase.wantLoaded, val, loaded)
 				}
 			}
 		})
@@ -349,13 +356,13 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 
 func TestInMemoryDatabase_Heap(t *testing.T) {
 	type createCall struct {
-		value string // Value for the Create
+		value string // value for the Create
 		ttl   int64  // TTL for the Create
 		index int    // The expected index in the final post-creation TTL increasing order
 	}
 	type putCall struct {
-		key   string // Key for the Put
-		value string // Value for the Put
+		key   string // key for the Put
+		value string // value for the Put
 		ttl   int64  // TTL for the Put
 	}
 
@@ -441,8 +448,8 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 			var copyHeap []ttlHeapData
 			for _, data := range *i.ttl {
 				key := data.key
-				dbEntry, loaded := i.store.Load(key)
-				if loaded && *dbEntry.(databaseEntry).ttl == data.ttl {
+				dbEntry, loaded := i.load(key)
+				if loaded && *dbEntry.ttl == data.ttl {
 					copyHeap = append(copyHeap, data)
 				}
 			}
@@ -461,7 +468,7 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 			for i, actual := range copyHeap {
 				expectedIndex, ok := tt.expectedOrder[actual.key]
 				if !ok {
-					t.Fatalf("Key %v is in copyHeap but does not exist in expectedOrder", actual.key)
+					t.Fatalf("key %v is in copyHeap but does not exist in expectedOrder", actual.key)
 				}
 				if expectedIndex != i {
 					t.Errorf("Got key %v at index %v instead of %v", actual.key, expectedIndex, i)
@@ -473,12 +480,12 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 
 func TestInMemoryDatabase_Cleanup(t *testing.T) {
 	type createCall struct {
-		value string // Value for the Create
+		value string // value for the Create
 		ttl   int64  // TTL for the Create
 	}
 	type putCall struct {
-		key   string // Key for the Put
-		value string // Value for the Put
+		key   string // key for the Put
+		value string // value for the Put
 		ttl   int64  // TTL for the Put
 	}
 
@@ -555,15 +562,7 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 			}
 			timeAfterCreation := time.Now().Unix()
 
-			// Get initial count
-			var count int
-			i.store.Range(func(k, v interface{}) bool {
-				count++
-				return true
-			})
-
-			t.Logf("Number of keys: %v", count)
-			if count == 0 {
+			if len(i.database) == 0 {
 				t.Errorf("Store is empty")
 			}
 
@@ -577,18 +576,138 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 
 				i.mu.Lock()
 
-				// Get number of remaining entries
-				var count int
-				i.store.Range(func(k, v interface{}) bool {
-					count++
-					return true
-				})
-
-				if count != len(*i.ttl) {
-					t.Errorf("Expected %v left but got %v. Len(ttlHeap) = %v", tt.check[c].numLeft, count, len(*i.ttl))
+				// Check the number of remaining entries
+				if len(i.database) != len(*i.ttl) {
+					t.Errorf("Expected %v left but got %v. Len(ttlHeap) = %v", tt.check[c].numLeft, len(i.database), len(*i.ttl))
 				}
 
 				i.mu.Unlock()
+			}
+		})
+	}
+}
+
+func TestInMemoryDatabase_Persistence(t *testing.T) {
+	intPtr := func(v int64) *int64 {
+		return &v
+	}
+
+	type createCall struct {
+		value string // value for the Create
+		ttl   int64  // TTL for the Create
+	}
+	type putCall struct {
+		key   string // key for the Put
+		value string // value for the Put
+		ttl   int64  // TTL for the Put
+	}
+
+	tests := []struct {
+		name        string
+		functions   []any
+		expectedDB  dbStore
+		expectedTTL *ttlHeap
+	}{
+		{
+			name: "Test saving database",
+			functions: []any{
+				&putCall{"hello1", "hello1", 10},
+				&putCall{"hello2", "hello2", 20},
+				&putCall{"hello3", "hello3", 30},
+				&putCall{"hello4", "hello4", 40},
+				&putCall{"hello3", "hello3", 50},
+			},
+			expectedDB: dbStore{
+				"hello1": databaseEntry{
+					value: "hello1",
+					ttl:   intPtr(10),
+				},
+				"hello2": databaseEntry{
+					value: "hello2",
+					ttl:   intPtr(20),
+				},
+				"hello3": databaseEntry{
+					value: "hello3",
+					ttl:   intPtr(50),
+				},
+				"hello4": databaseEntry{
+					value: "hello4",
+					ttl:   intPtr(40),
+				},
+			},
+			expectedTTL: &ttlHeap{
+				ttlHeapData{
+					key: "hello1",
+					ttl: 10,
+				},
+				ttlHeapData{
+					key: "hello2",
+					ttl: 20,
+				},
+				ttlHeapData{
+					key: "hello3",
+					ttl: 50,
+				},
+				ttlHeapData{
+					key: "hello4",
+					ttl: 40,
+				},
+			},
+		},
+	}
+
+	waitTime := 2 * time.Second
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			heap.Init(tt.expectedTTL)
+
+			i := NewInMemoryDatabase(WithPersistencePeriod(1*time.Second), WithPersistenceOutput("persist.json"))
+			for _, function := range tt.functions {
+				switch function.(type) {
+				case *createCall:
+					arguments := struct {
+						Value string `json:"value"`
+						Ttl   *int64 `json:"ttl"`
+					}{
+						function.(*createCall).value,
+						&function.(*createCall).ttl,
+					}
+					i.Create(arguments)
+				case *putCall:
+					arguments := struct {
+						Key   string `json:"key"`
+						Value string `json:"value"`
+						Ttl   *int64 `json:"ttl"`
+					}{
+						function.(*putCall).key,
+						function.(*putCall).value,
+						&function.(*putCall).ttl,
+					}
+					i.Put(arguments)
+				}
+			}
+
+			<-time.After(waitTime)
+
+			data, err := os.ReadFile("persist.json")
+			if err != nil {
+				t.Errorf("Failed to read persistence.json")
+			}
+
+			var db *InMemoryDatabase
+
+			err = json.Unmarshal(data, &db)
+			if err != nil {
+				t.Errorf("Failed to unmarshal persistence.json")
+			}
+
+			if !reflect.DeepEqual(db.ttl, i.ttl) {
+				t.Errorf("Actual ttl heap does not match persistence.json")
+			}
+
+			if !reflect.DeepEqual(db.database, i.database) {
+				t.Errorf("Actual database does not match persistence.json")
 			}
 		})
 	}

@@ -1,0 +1,42 @@
+{
+  "dbStore": {
+    "hello1": {
+      "value": "hello1",
+      "ttl": 1751788891
+    },
+    "hello2": {
+      "value": "hello2",
+      "ttl": 1751788901
+    },
+    "hello3": {
+      "value": "hello3",
+      "ttl": 1751788931
+    },
+    "hello4": {
+      "value": "hello4",
+      "ttl": 1751788921
+    }
+  },
+  "ttlHeap": [
+    {
+      "key": "hello1",
+      "ttl": 1751788891
+    },
+    {
+      "key": "hello2",
+      "ttl": 1751788901
+    },
+    {
+      "key": "hello3",
+      "ttl": 1751788911
+    },
+    {
+      "key": "hello4",
+      "ttl": 1751788921
+    },
+    {
+      "key": "hello3",
+      "ttl": 1751788931
+    }
+  ]
+}

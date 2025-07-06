@@ -2,7 +2,10 @@ package database
 
 import (
 	"container/heap"
+	"encoding/json"
 	"github.com/google/uuid"
+	"log/slog"
+	"os"
 	"sync"
 	"time"
 )
@@ -12,23 +15,42 @@ type databaseEntry struct {
 	ttl   *int64
 }
 
+type dbStore map[string]databaseEntry
+
 // InMemoryDatabase stores data in memory using a sync map to ensure thread safety
 type InMemoryDatabase struct {
-	store   sync.Map   // Store the database key, value pairs
-	ttl     *ttlHeap   // Store TTLs on a heap
-	mu      sync.Mutex // Mutex for coordinating ttlHeap cleaner with other operations
-	newItem chan struct{}
+	database dbStore       // Store the database key, value pairs
+	ttl      *ttlHeap      // Store TTLs on a heap
+	mu       sync.Mutex    // Mutex for coordinating ttlHeap cleaner and other operations
+	newItem  chan struct{} // This channel tells the cleaner routine when a ttl has been created/updated
+	s        settings      // Database settings
 }
 
-// NewInMemoryDatabase Return a new InMemoryDatabase instance
-func NewInMemoryDatabase() *InMemoryDatabase {
-	db := &InMemoryDatabase{}
-	db.store = sync.Map{}
-	db.ttl = new(ttlHeap)
+// NewInMemoryDatabase returns a new InMemoryDatabase instance
+func NewInMemoryDatabase(opts ...Options) *InMemoryDatabase {
+	db := &InMemoryDatabase{
+		database: dbStore{},
+		ttl:      &ttlHeap{},
+		mu:       sync.Mutex{},
+		newItem:  make(chan struct{}),
+		s: settings{
+			shouldPersist:     true,
+			persistFile:       "persist.json",
+			persistencePeriod: 5 * time.Minute,
+			logger:            slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		},
+	}
 	heap.Init(db.ttl)
-	db.newItem = make(chan struct{})
-	db.mu = sync.Mutex{}
-	go db.TTLCleanup()
+
+	for _, c := range opts {
+		c(db)
+	}
+
+	go db.ttlCleanup()
+	if db.s.shouldPersist {
+		go db.persist()
+	}
+
 	return db
 }
 
@@ -47,7 +69,7 @@ func (i *InMemoryDatabase) Create(data struct {
 		ttl = *data.Ttl + time.Now().Unix()
 		newEntry.ttl = &ttl
 	}
-	_, loaded := i.store.LoadOrStore(id, newEntry)
+	_, loaded := i.loadOrStore(id, newEntry)
 	if data.Ttl != nil && !loaded {
 		i.ttl.Push(ttlHeapData{id, ttl})
 
@@ -62,18 +84,18 @@ func (i *InMemoryDatabase) Create(data struct {
 
 // Get a value from the database by key if it exists and is valid
 func (i *InMemoryDatabase) Get(key string) (string, bool) {
-	value, loaded := i.store.Load(key)
-	if (loaded && value.(databaseEntry).ttl == nil) || (loaded && *value.(databaseEntry).ttl > time.Now().Unix()) {
-		return value.(databaseEntry).value, true
+	dbEntry, loaded := i.load(key)
+	if (loaded && dbEntry.ttl == nil) || (loaded && *dbEntry.ttl > time.Now().Unix()) {
+		return dbEntry.value, true
 	}
 	return "", false
 }
 
 // GetTTL the remaining TTL for a given key
 func (i *InMemoryDatabase) GetTTL(key string) (int64, bool) {
-	value, loaded := i.store.Load(key)
-	if loaded && value.(databaseEntry).ttl != nil {
-		return *value.(databaseEntry).ttl, true
+	dbEntry, loaded := i.load(key)
+	if loaded && dbEntry.ttl != nil {
+		return *dbEntry.ttl - time.Now().Unix(), true
 	}
 	return 0, false
 }
@@ -87,14 +109,15 @@ func (i *InMemoryDatabase) Put(data struct {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	_, loaded := i.store.LoadOrStore(data.Key, data.Value)
+	_, loaded := i.load(data.Key)
 	newEntry := databaseEntry{value: data.Value}
 	var ttl int64
 	if data.Ttl != nil {
 		ttl = *data.Ttl + time.Now().Unix()
 		newEntry.ttl = &ttl
 	}
-	i.store.Store(data.Key, newEntry)
+	i.store(data.Key, newEntry)
+
 	if data.Ttl != nil {
 		i.ttl.Push(ttlHeapData{data.Key, ttl})
 
@@ -113,12 +136,12 @@ func (i *InMemoryDatabase) Delete(key string) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	_, loaded := i.store.LoadAndDelete(key)
+	_, loaded := i.loadAndDelete(key)
 	return loaded
 }
 
-// TTLCleanup performs routine ttlHeap cleanup
-func (i *InMemoryDatabase) TTLCleanup() {
+// ttlCleanup performs routine ttlHeap cleanup
+func (i *InMemoryDatabase) ttlCleanup() {
 	for {
 		i.mu.Lock()
 
@@ -150,11 +173,87 @@ func (i *InMemoryDatabase) TTLCleanup() {
 		ttl := heapData.ttl
 
 		// Delete only if it still exists and the ttl has not been modified
-		data, loaded := i.store.Load(key)
-		if loaded && data.(databaseEntry).ttl != nil && *data.(databaseEntry).ttl == ttl {
-			i.store.Delete(key)
+		dbEntry, loaded := i.load(key)
+		if loaded && dbEntry.ttl != nil && *dbEntry.ttl == ttl {
+			i.delete(key)
 		}
 		i.mu.Unlock()
 	}
+}
 
+// Persist will persist all storage to filename output every interval in seconds.
+func (i *InMemoryDatabase) persist() {
+	for {
+		<-time.After(i.s.persistencePeriod)
+
+		i.mu.Lock()
+
+		file, err := os.Create(i.s.persistFile)
+
+		if err != nil {
+			i.s.logger.Error("Error opening/creating persistence file: ", "err", err)
+			i.mu.Unlock()
+			continue
+		}
+
+		//data, err := json.Marshal(i)
+		data, err := json.MarshalIndent(i, "", "  ")
+		if err != nil {
+			i.s.logger.Error("Error marshaling database: ", "err", err)
+			i.mu.Unlock()
+			continue
+		}
+
+		_, err = file.Write(data)
+		if err != nil {
+			i.s.logger.Error("Error writing database json to file: ", "err", err)
+			i.mu.Unlock()
+			continue
+		}
+
+		err = file.Close()
+		if err != nil {
+			i.s.logger.Error("Error closing persistence file: ", "err", err)
+			i.mu.Unlock()
+			continue
+		}
+		i.mu.Unlock()
+	}
+}
+
+// If the key exists in the database, return the associated entry alongside True.
+// Otherwise, return the zero value alongside False.
+func (i *InMemoryDatabase) load(key string) (databaseEntry, bool) {
+	d, loaded := i.database[key]
+	return d, loaded
+}
+
+// Delete the key value pair from the database
+func (i *InMemoryDatabase) delete(key string) {
+	delete(i.database, key)
+}
+
+// If the key exists in the database, delete it and return the deleted entry alongside True.
+// Otherwise, return a zero value alongside False.
+func (i *InMemoryDatabase) loadAndDelete(key string) (databaseEntry, bool) {
+	d, loaded := i.load(key)
+	i.delete(key)
+	return d, loaded
+}
+
+// Store the key value pair in the database
+func (i *InMemoryDatabase) store(key string, d databaseEntry) {
+	i.database[key] = d
+}
+
+// If the key exists in the database storage, loadOrStore will return the existing entry and True.
+// Otherwise, it will return the new entry and False.
+func (i *InMemoryDatabase) loadOrStore(key string, d databaseEntry) (databaseEntry, bool) {
+	o, loaded := i.load(key)
+	if loaded {
+		return o, true
+	}
+
+	i.store(key, d)
+	return d, false
 }

@@ -8,11 +8,12 @@ import (
 	"os"
 )
 
-// CLEANER GO ROUTINE FOR HEAP
+// Finish persistence (test loading). Start PUB/SUB
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	h := handler.NewHandler(database.NewInMemoryDatabase(), logger)
+	db := database.NewInMemoryDatabase(database.WithInitialData("startup.json"), database.WithLogger(logger))
+	h := handler.NewHandler(db, logger)
 	err := http.ListenAndServe("localhost:8080", h)
 	if err != nil {
 		return
