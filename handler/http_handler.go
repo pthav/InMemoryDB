@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 )
 
 type database interface {
@@ -51,15 +52,25 @@ type putRequest struct {
 	Ttl   *int64 `json:"ttl"`
 }
 
+type pubSubBroker struct {
+	mu       sync.RWMutex
+	channels map[string][]chan string
+}
+
+type publishRequest struct {
+	Message string `json:"message" validate:"required"`
+}
+
 type Wrapper struct {
 	db     database
 	router *mux.Router
 	logger *slog.Logger
+	broker pubSubBroker
 }
 
 // NewHandler Return a new HandlerWrapper instance with all routes set
 func NewHandler(db database, logger *slog.Logger) *Wrapper {
-	handler := &Wrapper{db: db, logger: logger}
+	handler := &Wrapper{db: db, logger: logger, broker: pubSubBroker{channels: make(map[string][]chan string)}}
 	handler.router = mux.NewRouter()
 	handler.router.HandleFunc("/v1/keys", handler.postHandler).
 		Methods("POST")
@@ -71,6 +82,10 @@ func NewHandler(db database, logger *slog.Logger) *Wrapper {
 		Methods("DELETE")
 	handler.router.HandleFunc("/v1/ttl/{key}", handler.getTTLHandler).
 		Methods("GET")
+	handler.router.HandleFunc("/v1/subscribe/{channel}", handler.subscribeHandler).
+		Methods("POST")
+	handler.router.HandleFunc("/v1/publish/{channel}", handler.publishHandler).
+		Methods("GET")
 	handler.router.Use(handler.loggingMiddleware)
 	return handler
 }
@@ -79,7 +94,7 @@ func (h *Wrapper) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	h.router.ServeHTTP(writer, request)
 }
 
-// setHandler use request key and value from the request body to set the key value pair in the database
+// postHandler uses request key and value from the request body to set the key value pair in the database
 func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 	var rData postRequest
 	err := json.NewDecoder(r.Body).Decode(&rData)
@@ -118,7 +133,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// getHandler use request key and return associated value if it exists
+// getHandler uses the request key and returns the associated value if it exists
 func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
@@ -139,7 +154,7 @@ func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// setHandler use request key and value from the request body to set the key value pair in the database
+// putHandler uses request key and value from the request body to set the key value pair in the database
 // Users are allowed to update the ttl through "PUT" operations.
 func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 	var rData putRequest
@@ -173,7 +188,7 @@ func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// deleteHandler use the request key to delete the key value pair from the database
+// deleteHandler uses the request key to delete the key value pair from the database
 func (h *Wrapper) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
@@ -185,6 +200,7 @@ func (h *Wrapper) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// getTTLHandler will get the remaining TTL for a key value pair
 func (h *Wrapper) getTTLHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
@@ -203,6 +219,74 @@ func (h *Wrapper) getTTLHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+// subscribeHandler allows a client to subscribe to a specific channel and receive string messages over the channel
+func (h *Wrapper) subscribeHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	channel := vars["channel"]
+
+	// Check if SSE is valid for the writer
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	c := make(chan string, 10)
+
+	h.broker.mu.Lock()
+	h.broker.channels[channel] = append(h.broker.channels[channel], c)
+	h.broker.mu.Unlock()
+
+	// Run a go func to remove the subscriber from the channel when they disconnect
+	ctx := r.Context()
+	go func() {
+		<-ctx.Done()
+		h.broker.mu.Lock()
+		for i, ch := range h.broker.channels[channel] {
+			if ch == c {
+				h.broker.channels[channel] = append(h.broker.channels[channel][:i], h.broker.channels[channel][i+1:]...)
+				break
+			}
+		}
+		close(c)
+		h.broker.mu.Unlock()
+	}()
+
+	for message := range c {
+		fmt.Printf("%s\n\n", message)
+		flusher.Flush()
+	}
+}
+
+// publishHandler allows a client to publish a string message to a specific channel for all subscribers
+func (h *Wrapper) publishHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	channel := vars["channel"]
+
+	var pData publishRequest
+	if err := json.NewDecoder(r.Body).Decode(&pData); err != nil {
+		http.Error(w, "Publish request has bad body", http.StatusBadRequest)
+	}
+
+	h.broker.mu.RLock()
+	defer h.broker.mu.RUnlock()
+
+	for _, c := range h.broker.channels[channel] {
+		select {
+		case c <- pData.Message:
+		default:
+			// Drop message if the channel is full
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // loggingMiddleware logs all incoming requests
