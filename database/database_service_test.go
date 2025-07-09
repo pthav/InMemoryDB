@@ -10,6 +10,48 @@ import (
 	"time"
 )
 
+type createCall struct {
+	value string // value for the Create
+	ttl   int64  // TTL for the Create
+	index int    // The expected index in the final post-creation TTL increasing order
+}
+type putCall struct {
+	key   string // key for the Put
+	value string // value for the Put
+	ttl   int64  // TTL for the Put
+}
+
+// SetupHelper will take functions and use them to create a database
+func SetupHelper(i *InMemoryDatabase, functions *[]any, expectedOrder *map[string]int) {
+	for _, function := range *functions {
+		switch function.(type) {
+		case *createCall:
+			arguments := struct {
+				Value string `json:"value"`
+				Ttl   *int64 `json:"ttl"`
+			}{
+				function.(*createCall).value,
+				&function.(*createCall).ttl,
+			}
+			_, uuid := i.Create(arguments)
+			if expectedOrder != nil {
+				(*expectedOrder)[uuid] = function.(*createCall).index
+			}
+		case *putCall:
+			arguments := struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+				Ttl   *int64 `json:"ttl"`
+			}{
+				function.(*putCall).key,
+				function.(*putCall).value,
+				&function.(*putCall).ttl,
+			}
+			i.Put(arguments)
+		}
+	}
+}
+
 func TestInMemoryDatabase_Create(t *testing.T) {
 	type test []struct {
 		value       string // The value for the Create
@@ -355,17 +397,6 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 }
 
 func TestInMemoryDatabase_Heap(t *testing.T) {
-	type createCall struct {
-		value string // value for the Create
-		ttl   int64  // TTL for the Create
-		index int    // The expected index in the final post-creation TTL increasing order
-	}
-	type putCall struct {
-		key   string // key for the Put
-		value string // value for the Put
-		ttl   int64  // TTL for the Put
-	}
-
 	tests := []struct {
 		name          string
 		numKeys       int
@@ -418,31 +449,7 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := NewInMemoryDatabase()
-			for _, function := range tt.functions {
-				switch function.(type) {
-				case *createCall:
-					arguments := struct {
-						Value string `json:"value"`
-						Ttl   *int64 `json:"ttl"`
-					}{
-						function.(*createCall).value,
-						&function.(*createCall).ttl,
-					}
-					_, uuid := i.Create(arguments)
-					tt.expectedOrder[uuid] = function.(*createCall).index
-				case *putCall:
-					arguments := struct {
-						Key   string `json:"key"`
-						Value string `json:"value"`
-						Ttl   *int64 `json:"ttl"`
-					}{
-						function.(*putCall).key,
-						function.(*putCall).value,
-						&function.(*putCall).ttl,
-					}
-					i.Put(arguments)
-				}
-			}
+			SetupHelper(i, &tt.functions, &tt.expectedOrder)
 
 			// Get all ttlHeap information
 			var copyHeap []ttlHeapData
@@ -479,16 +486,6 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 }
 
 func TestInMemoryDatabase_Cleanup(t *testing.T) {
-	type createCall struct {
-		value string // value for the Create
-		ttl   int64  // TTL for the Create
-	}
-	type putCall struct {
-		key   string // key for the Put
-		value string // value for the Put
-		ttl   int64  // TTL for the Put
-	}
-
 	type checkDeleted struct {
 		delay   int64 // Time after initialization to check
 		numLeft int   // How many should remain
@@ -504,8 +501,8 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 		{
 			name: "Create Plus Put",
 			functions: []any{
-				&createCall{"hello1", 1},
-				&createCall{"hello2", 2},
+				&createCall{"hello1", 1, -1},
+				&createCall{"hello2", 2, -1},
 				&putCall{"hello3", "hello3", 3},
 				&putCall{"hello4", "hello4", 4},
 				&putCall{"hello3", "hello3", 5},
@@ -522,8 +519,8 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 		{
 			name: "Create Only",
 			functions: []any{
-				&createCall{"hello1", 1},
-				&createCall{"hello2", 2},
+				&createCall{"hello1", 1, -1},
+				&createCall{"hello2", 2, -1},
 			},
 			check: []checkDeleted{
 				{1, 1},
@@ -536,30 +533,8 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := NewInMemoryDatabase()
-			for _, function := range tt.functions {
-				switch function.(type) {
-				case *createCall:
-					arguments := struct {
-						Value string `json:"value"`
-						Ttl   *int64 `json:"ttl"`
-					}{
-						function.(*createCall).value,
-						&function.(*createCall).ttl,
-					}
-					i.Create(arguments)
-				case *putCall:
-					arguments := struct {
-						Key   string `json:"key"`
-						Value string `json:"value"`
-						Ttl   *int64 `json:"ttl"`
-					}{
-						function.(*putCall).key,
-						function.(*putCall).value,
-						&function.(*putCall).ttl,
-					}
-					i.Put(arguments)
-				}
-			}
+			SetupHelper(i, &tt.functions, nil)
+
 			timeAfterCreation := time.Now().Unix()
 
 			if len(i.database) == 0 {
@@ -590,16 +565,6 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 func TestInMemoryDatabase_Persistence(t *testing.T) {
 	intPtr := func(v int64) *int64 {
 		return &v
-	}
-
-	type createCall struct {
-		value string // value for the Create
-		ttl   int64  // TTL for the Create
-	}
-	type putCall struct {
-		key   string // key for the Put
-		value string // value for the Put
-		ttl   int64  // TTL for the Put
 	}
 
 	tests := []struct {
@@ -663,51 +628,66 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 			heap.Init(tt.expectedTTL)
 
 			i := NewInMemoryDatabase(WithPersistencePeriod(1*time.Second), WithPersistenceOutput("persist.json"))
-			for _, function := range tt.functions {
-				switch function.(type) {
-				case *createCall:
-					arguments := struct {
-						Value string `json:"value"`
-						Ttl   *int64 `json:"ttl"`
-					}{
-						function.(*createCall).value,
-						&function.(*createCall).ttl,
-					}
-					i.Create(arguments)
-				case *putCall:
-					arguments := struct {
-						Key   string `json:"key"`
-						Value string `json:"value"`
-						Ttl   *int64 `json:"ttl"`
-					}{
-						function.(*putCall).key,
-						function.(*putCall).value,
-						&function.(*putCall).ttl,
-					}
-					i.Put(arguments)
-				}
-			}
+			SetupHelper(i, &tt.functions, nil)
 
 			<-time.After(waitTime)
 
 			data, err := os.ReadFile("persist.json")
 			if err != nil {
-				t.Errorf("Failed to read persistence.json")
+				t.Errorf("Failed to read persist.json")
 			}
 
 			var db *InMemoryDatabase
 
 			err = json.Unmarshal(data, &db)
 			if err != nil {
-				t.Errorf("Failed to unmarshal persistence.json")
+				t.Errorf("Failed to unmarshal persist.json")
 			}
 
 			if !reflect.DeepEqual(db.ttl, i.ttl) {
-				t.Errorf("Actual ttl heap does not match persistence.json")
+				t.Errorf("Actual ttl heap does not match persist.json")
 			}
 
 			if !reflect.DeepEqual(db.database, i.database) {
-				t.Errorf("Actual database does not match persistence.json")
+				t.Errorf("Actual database does not match persist.json")
+			}
+		})
+	}
+}
+
+func TestInMemoryDatabase_StartJson(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{
+			name: "Test starting database with json",
+			file: "testStartup.json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := NewInMemoryDatabase(WithInitialData(tt.file))
+
+			data, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Errorf("Failed to read %v", tt.file)
+			}
+
+			var db *InMemoryDatabase
+
+			err = json.Unmarshal(data, &db)
+			if err != nil {
+				t.Errorf("Failed to unmarshal %v", tt.file)
+			}
+
+			if !reflect.DeepEqual(db.ttl, i.ttl) {
+				t.Errorf("Actual ttl heap does not match %v", tt.file)
+			}
+
+			if !reflect.DeepEqual(db.database, i.database) {
+				t.Errorf("Actual database does not match %v", tt.file)
 			}
 		})
 	}

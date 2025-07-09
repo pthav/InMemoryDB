@@ -196,7 +196,6 @@ func (i *InMemoryDatabase) persist() {
 			continue
 		}
 
-		//data, err := json.Marshal(i)
 		data, err := json.MarshalIndent(i, "", "  ")
 		if err != nil {
 			i.s.logger.Error("Error marshaling database: ", "err", err)
