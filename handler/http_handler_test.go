@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	"io"
@@ -13,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // DatabaseTestImplementation is an implementation of database used for test cases
@@ -473,6 +477,150 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 					t.Errorf("Get() key = %v; want %v", db.getTTLCalls[0].key, tt.key)
 				}
 			}
+		})
+	}
+}
+
+func TestWrapper_pubSub(t *testing.T) {
+	type subscriber struct {
+		channel  string
+		expected []string
+		expire   time.Duration
+	}
+
+	type publisher struct {
+		channel string
+		message string
+		wait    time.Duration
+	}
+
+	tests := []struct {
+		name        string
+		subscribers []subscriber
+		publishers  []publisher
+		wait        time.Duration
+	}{
+		{
+			name: "One subscriber",
+			subscribers: []subscriber{
+				{channel: "test", expected: []string{"message1", "message2"}, expire: time.Second},
+			},
+			publishers: []publisher{
+				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
+			},
+			wait: 100 * time.Millisecond,
+		},
+		{
+			name: "Multiple subscribers",
+			subscribers: []subscriber{
+				{channel: "test", expected: []string{"message1", "message2"}, expire: time.Second},
+				{channel: "test", expected: []string{"message1", "message2"}, expire: time.Second},
+				{channel: "dogs", expected: []string{"message1", "message2", "message3", "message4"}, expire: time.Second},
+			},
+			publishers: []publisher{
+				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
+				{channel: "dogs", message: "message1", wait: 10 * time.Millisecond},
+				{channel: "dogs", message: "message2", wait: 20 * time.Millisecond},
+				{channel: "dogs", message: "message3", wait: 30 * time.Millisecond},
+				{channel: "dogs", message: "message4", wait: 40 * time.Millisecond},
+			},
+			wait: 100 * time.Millisecond,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up handler
+			db := &databaseTestImplementation{}
+			h := NewHandler(db, slog.New(slog.DiscardHandler))
+			ts := httptest.NewServer(h)
+			defer ts.Close()
+
+			// Start each subscriber
+			for i, s := range tt.subscribers {
+				go func() {
+					t.Logf("Subscriber %v subscribing to channel %v", i, s.channel)
+
+					// Create an http request for subscription that will automatically disconnect after the
+					// subscriber's expiration
+					client := http.Client{}
+
+					ctx, cancel := context.WithTimeout(context.Background(), s.expire)
+					defer cancel()
+
+					req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/v1/subscribe/%s", ts.URL, s.channel), nil)
+					if err != nil {
+						t.Error(err)
+					}
+
+					resp, err := client.Do(req)
+					if err != nil {
+						t.Error(err)
+					}
+
+					defer func(Body io.ReadCloser) {
+						err := Body.Close()
+						if err != nil {
+							t.Errorf("Failed to close response body: %v", err)
+						}
+					}(resp.Body)
+					reader := bufio.NewReader(resp.Body)
+
+					// Get each message
+					messageCount := 0
+					for {
+						line, err := reader.ReadString('\n')
+						if err != nil {
+							// If it is an organic error, check the final messageCount against the expectation
+							if errors.Is(err, context.DeadlineExceeded) || err == io.EOF {
+								if messageCount != len(s.expected) {
+									t.Errorf("Got message count %v expected %v", messageCount, len(s.expected))
+								}
+								break
+							}
+							t.Errorf("Message read error: %v", err)
+							break
+						}
+						t.Logf("Subscriber %v has received line %v", i, line)
+
+						// Only check valid SSE output
+						if strings.HasPrefix(line, "data: ") {
+							if messageCount > len(s.expected) {
+								t.Errorf("Too many messages received got %v expected %v", messageCount, len(s.expected))
+								break
+							}
+							msg := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+							if msg != s.expected[messageCount] {
+								t.Errorf("For message %v expected %v but got %v", messageCount, s.expected[messageCount], msg)
+								break
+							}
+							messageCount++
+						}
+					}
+				}()
+			}
+
+			// Start each publisher
+			for _, p := range tt.publishers {
+				go func() {
+					<-time.After(p.wait)
+					t.Logf("Publishing to channel %v with message %v", p.channel, p.message)
+					payload := fmt.Sprintf(`{"message": "%v"}`, p.message)
+					resp, err := http.Post(fmt.Sprintf("%s/v1/publish/%s", ts.URL, p.channel), "application/json", strings.NewReader(payload))
+					defer func(Body io.ReadCloser) {
+						err := Body.Close()
+						if err != nil {
+							t.Errorf("Failed to close response body: %v", err)
+						}
+					}(resp.Body)
+					if err != nil {
+						t.Errorf("Unable to send post request: %v", err)
+					}
+				}()
+			}
+
+			<-time.After(tt.wait)
 		})
 	}
 }

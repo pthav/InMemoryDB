@@ -83,9 +83,9 @@ func NewHandler(db database, logger *slog.Logger) *Wrapper {
 	handler.router.HandleFunc("/v1/ttl/{key}", handler.getTTLHandler).
 		Methods("GET")
 	handler.router.HandleFunc("/v1/subscribe/{channel}", handler.subscribeHandler).
-		Methods("POST")
-	handler.router.HandleFunc("/v1/publish/{channel}", handler.publishHandler).
 		Methods("GET")
+	handler.router.HandleFunc("/v1/publish/{channel}", handler.publishHandler).
+		Methods("POST")
 	handler.router.Use(handler.loggingMiddleware)
 	return handler
 }
@@ -260,7 +260,10 @@ func (h *Wrapper) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for message := range c {
-		fmt.Printf("%s\n\n", message)
+		_, err := fmt.Fprintf(w, "data: %s\n\n", message)
+		if err != nil {
+			http.Error(w, "Error writing message to subscriber", http.StatusInternalServerError)
+		}
 		flusher.Flush()
 	}
 }

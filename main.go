@@ -8,8 +8,7 @@ import (
 	"os"
 )
 
-// Finish persistence (test loading). Start PUB/SUB
-
+// Start CLI tool
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	db := database.NewInMemoryDatabase(database.WithInitialData("startup.json"), database.WithLogger(logger))
