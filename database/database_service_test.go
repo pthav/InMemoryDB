@@ -76,7 +76,11 @@ func TestInMemoryDatabase_Create(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase()
+			i, err := NewInMemoryDatabase()
+			if err != nil {
+				t.Error(err)
+			}
+
 			for _, testCase := range tt.cases {
 				data := struct {
 					Value string `json:"value"`
@@ -159,7 +163,11 @@ func TestInMemoryDatabase_Get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, testCase := range tt.cases {
-				i := NewInMemoryDatabase()
+				i, err := NewInMemoryDatabase()
+				if err != nil {
+					t.Error(err)
+				}
+
 				var ttl *int64
 				if testCase.addTTL {
 					ttl = &testCase.ttl
@@ -231,7 +239,11 @@ func TestInMemoryDatabase_Put(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase()
+			i, err := NewInMemoryDatabase()
+			if err != nil {
+				t.Error(err)
+			}
+
 			for _, testCase := range tt.cases {
 				data := struct {
 					Key   string `json:"key"`
@@ -287,7 +299,11 @@ func TestInMemoryDatabase_Delete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase()
+			i, err := NewInMemoryDatabase()
+			if err != nil {
+				t.Error(err)
+			}
+
 			i.Put(struct {
 				Key   string `json:"key"`
 				Value string `json:"value"`
@@ -361,7 +377,10 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var ttl int64 = 100
-			i := NewInMemoryDatabase()
+			i, err := NewInMemoryDatabase()
+			if err != nil {
+				t.Error(err)
+			}
 
 			// Add an entry with no expiration
 			i.Put(struct {
@@ -448,7 +467,11 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase()
+			i, err := NewInMemoryDatabase()
+			if err != nil {
+				t.Error(err)
+			}
+
 			SetupHelper(i, &tt.functions, &tt.expectedOrder)
 
 			// Get all ttlHeap information
@@ -532,7 +555,11 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase()
+			i, err := NewInMemoryDatabase()
+			if err != nil {
+				t.Error(err)
+			}
+
 			SetupHelper(i, &tt.functions, nil)
 
 			timeAfterCreation := time.Now().Unix()
@@ -627,7 +654,10 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			heap.Init(tt.expectedTTL)
 
-			i := NewInMemoryDatabase(WithPersistencePeriod(1*time.Second), WithPersistenceOutput("persist.json"))
+			i, err := NewInMemoryDatabase(WithPersistence(), WithPersistencePeriod(1*time.Second), WithPersistenceOutput("persist.json"))
+			if err != nil {
+				t.Error(err)
+			}
 			SetupHelper(i, &tt.functions, nil)
 
 			<-time.After(waitTime)
@@ -668,7 +698,10 @@ func TestInMemoryDatabase_StartJson(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := NewInMemoryDatabase(WithInitialData(tt.file))
+			i, err := NewInMemoryDatabase(WithInitialData(tt.file))
+			if err != nil {
+				t.Error(err)
+			}
 
 			data, err := os.ReadFile(tt.file)
 			if err != nil {

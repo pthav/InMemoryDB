@@ -15,40 +15,52 @@ type settings struct {
 	logger            *slog.Logger  // Logging
 }
 
-type Options func(*InMemoryDatabase)
+type Options func(*InMemoryDatabase) error
+
+// WithPersistence sets the database to persist
+func WithPersistence() Options {
+	return func(db *InMemoryDatabase) error {
+		db.s.shouldPersist = true
+		return nil
+	}
+}
 
 // WithPersistenceOutput sets the filename
 func WithPersistenceOutput(s string) Options {
-	return func(db *InMemoryDatabase) {
+	return func(db *InMemoryDatabase) error {
 		db.s.persistFile = s
+		return nil
 	}
 }
 
 // WithPersistencePeriod sets the persistence period
 func WithPersistencePeriod(d time.Duration) Options {
-	return func(db *InMemoryDatabase) {
+	return func(db *InMemoryDatabase) error {
 		db.s.persistencePeriod = d
+		return nil
 	}
 }
 
 // WithLogger sets the logger to be used
 func WithLogger(l *slog.Logger) Options {
-	return func(db *InMemoryDatabase) {
+	return func(db *InMemoryDatabase) error {
 		db.s.logger = l
+		return nil
 	}
 }
 
 // WithInitialData allows the provision of a .json file to initialize the database with
 func WithInitialData(filename string) Options {
-	return func(db *InMemoryDatabase) {
+	return func(db *InMemoryDatabase) error {
 		data, err := os.ReadFile(filename)
 		if err != nil {
-			panic("Failed to open file passed to WithInitialData during InMemoryDatabase initialization")
+			return err
 		}
 
 		err = json.Unmarshal(data, db)
 		if err != nil {
-			panic("Failed to unmarshal into new database during InMemoryDatabase initialization")
+			return err
 		}
+		return nil
 	}
 }

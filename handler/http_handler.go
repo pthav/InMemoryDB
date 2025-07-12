@@ -47,7 +47,7 @@ type postRequest struct {
 }
 
 type putRequest struct {
-	Key   string `json:"key" validate:"required"`
+	Key   string `json:"key"` // This is overwritten by the url parameter if passed in with the request body
 	Value string `json:"value" validate:"required"`
 	Ttl   *int64 `json:"ttl"`
 }
@@ -143,6 +143,7 @@ func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !loaded {
 		w.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)

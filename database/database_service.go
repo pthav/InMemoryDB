@@ -27,14 +27,14 @@ type InMemoryDatabase struct {
 }
 
 // NewInMemoryDatabase returns a new InMemoryDatabase instance
-func NewInMemoryDatabase(opts ...Options) *InMemoryDatabase {
-	db := &InMemoryDatabase{
+func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
+	db = &InMemoryDatabase{
 		database: dbStore{},
 		ttl:      &ttlHeap{},
 		mu:       sync.Mutex{},
 		newItem:  make(chan struct{}),
 		s: settings{
-			shouldPersist:     true,
+			shouldPersist:     false,
 			persistFile:       "persist.json",
 			persistencePeriod: 5 * time.Minute,
 			logger:            slog.New(slog.NewTextHandler(os.Stdout, nil)),
@@ -43,7 +43,10 @@ func NewInMemoryDatabase(opts ...Options) *InMemoryDatabase {
 	heap.Init(db.ttl)
 
 	for _, c := range opts {
-		c(db)
+		err = c(db)
+		if err != nil {
+			return
+		}
 	}
 
 	go db.ttlCleanup()
@@ -51,7 +54,7 @@ func NewInMemoryDatabase(opts ...Options) *InMemoryDatabase {
 		go db.persist()
 	}
 
-	return db
+	return
 }
 
 // Create a key value pair in the database

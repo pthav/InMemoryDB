@@ -235,16 +235,18 @@ func TestWrapper_getHandler(t *testing.T) {
 				t.Errorf("response code = %v; want %v", w.Code, tt.status)
 			}
 
-			var body getResponse
-			err := json.NewDecoder(w.Body).Decode(&body)
-			if err != nil {
-				t.Errorf("Failed to decode response body JSON: %v", err)
-			}
+			if tt.readReturn {
+				var body getResponse
+				err := json.NewDecoder(w.Body).Decode(&body)
+				if err != nil {
+					t.Errorf("Failed to decode response body JSON: %v", err)
+				}
 
-			expected := getResponse{Key: tt.key, Value: tt.value}
+				expected := getResponse{Key: tt.key, Value: tt.value}
 
-			if !reflect.DeepEqual(expected, body) {
-				t.Errorf("response body = %v; want %v", body, expected)
+				if !reflect.DeepEqual(expected, body) {
+					t.Errorf("response body = %v; want %v", body, expected)
+				}
 			}
 
 			if tt.checkCalls {
@@ -672,12 +674,15 @@ func TestLoggingMiddleware(t *testing.T) {
 
 func TestJsonValidationPost(t *testing.T) {
 	t.Run("Check post validation", func(t *testing.T) {
+		// Don't pass in a value
 		wBad := httptest.NewRecorder()
 		rBad := &http.Request{
 			Method: "POST",
 			URL:    &url.URL{Path: "/v1/keys"},
 			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"ttl": %v}`, 100))),
 		}
+
+		// Pass in value as required
 		wGood := httptest.NewRecorder()
 		rGood := &http.Request{
 			Method: "POST",
@@ -711,12 +716,15 @@ func TestJsonValidationPost(t *testing.T) {
 
 func TestJsonValidationPut(t *testing.T) {
 	t.Run("Check post validation", func(t *testing.T) {
+		// Don't pass in a value
 		wBad := httptest.NewRecorder()
 		rBad := &http.Request{
 			Method: "PUT",
 			URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", "test")},
 			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"ttl": %v}`, 100))),
 		}
+
+		// Pass in value as required
 		wGood := httptest.NewRecorder()
 		rGood := &http.Request{
 			Method: "PUT",
