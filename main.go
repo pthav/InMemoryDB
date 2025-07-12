@@ -2,7 +2,7 @@ package main
 
 import "InMemoryDB/cmd"
 
-// Add logging to database package
+// Add logs to database package, add tests for CLI, metrics endpoint, rate limiting on IP
 func main() {
 	cmd.Execute()
 }

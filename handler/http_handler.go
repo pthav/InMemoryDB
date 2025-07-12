@@ -109,7 +109,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 	validate := validator.New()
 	err = validate.Struct(rData)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Validation errors when parsing create request: %s", err.Error()), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Validation errors when parsing post request: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 	validate := validator.New()
 	err = validate.Struct(rData)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Validation errors when parsing update request: %s", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Validation errors when parsing put request: %s", err), http.StatusBadRequest)
 		return
 	}
 

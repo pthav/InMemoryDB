@@ -6,6 +6,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Common flags for child commands
+var port int
+var key string
+var value string
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "InMemoryDB",

@@ -13,7 +13,6 @@ import (
 )
 
 // Arguments
-var port int
 var startupFile string
 var persistencePeriod int
 var persistFile string
@@ -23,8 +22,8 @@ var shouldPersist bool
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Serve the database",
-	Long: `Serve will spin up an in memory database instance
-and listen for localhost requests on the given port`,
+	Long: `Serve will spin up an in memory database instance and listen for localhost requests on the given port.
+Flags can be provided to configure the database`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
@@ -40,7 +39,7 @@ and listen for localhost requests on the given port`,
 			config = append(config, database.WithInitialData(startupFile))
 		}
 
-		db, err := database.NewInMemoryDatabase(config...)
+		db, err := database.NewInMemoryDatabase(config...) // Configure database
 		if err != nil {
 			return err
 		}
@@ -56,6 +55,7 @@ and listen for localhost requests on the given port`,
 	},
 }
 
+// go run main.go serve -p 7070 -c 6 --persist --persist-file persist.json --startup-file startup.json
 func init() {
 	rootCmd.AddCommand(serveCmd)
 
