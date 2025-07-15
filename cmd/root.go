@@ -1,15 +1,12 @@
 package cmd
 
 import (
+	"InMemoryDB/cmd/server"
 	"os"
 
 	"InMemoryDB/cmd/endpoint"
 	"github.com/spf13/cobra"
 )
-
-// Common flags for child commands
-var port int
-var value string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -30,4 +27,5 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(endpoint.EndpointsCmd)
+	rootCmd.AddCommand(server.ServerCmd)
 }

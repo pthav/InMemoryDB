@@ -1,4 +1,4 @@
-package cmd
+package server
 
 import (
 	"InMemoryDB/database"
@@ -57,8 +57,6 @@ Flags can be provided to configure the database`,
 
 // go run main.go serve -p 7070 -c 6 --persist --persist-file persist.json --startup-file startup.json
 func init() {
-	rootCmd.AddCommand(serveCmd)
-
 	serveCmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on.")
 	serveCmd.Flags().StringVar(&startupFile, "startup-file", "", "File containing json data to initialize the database with.")
 	serveCmd.Flags().IntVarP(&persistencePeriod, "persist-cycle", "c", 60, "How long the persistence cycle should be in seconds.")
