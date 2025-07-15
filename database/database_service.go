@@ -95,12 +95,16 @@ func (i *InMemoryDatabase) Get(key string) (string, bool) {
 }
 
 // GetTTL the remaining TTL for a given key
-func (i *InMemoryDatabase) GetTTL(key string) (int64, bool) {
+func (i *InMemoryDatabase) GetTTL(key string) (*int64, bool) {
 	dbEntry, loaded := i.load(key)
-	if loaded && dbEntry.ttl != nil {
-		return *dbEntry.ttl - time.Now().Unix(), true
+	if !loaded {
+		return nil, false
+	} else if dbEntry.ttl != nil {
+		var ttl int64
+		ttl = *dbEntry.ttl - time.Now().Unix()
+		return &ttl, true
 	}
-	return 0, false
+	return nil, true
 }
 
 // Put a key value pair into the database

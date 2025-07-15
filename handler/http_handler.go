@@ -23,8 +23,8 @@ type database interface {
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
 	}) bool // Put a key, value pair
-	Delete(key string) bool          // Delete the key, value pair
-	GetTTL(key string) (int64, bool) // Get the remaining TTL for a given key if it has a TTL
+	Delete(key string) bool           // Delete the key, value pair
+	GetTTL(key string) (*int64, bool) // Get the remaining TTL for a given key if it has a TTL
 }
 
 type postResponse struct {
@@ -38,7 +38,7 @@ type getResponse struct {
 
 type getTTLResponse struct {
 	Key string `json:"key"`
-	TTL int64  `json:"ttl"`
+	TTL *int64 `json:"ttl"`
 }
 
 type postRequest struct {

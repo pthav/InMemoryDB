@@ -325,6 +325,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 	type test []struct {
 		key        string // key for get
 		wantLoaded bool   // Expected loaded
+		wantNil    bool   // Whether the returned TTL pointer should be nil or not
 		delay      int64  // How long to delay before sending a GetTTL call
 	}
 
@@ -339,6 +340,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 					key:        "key",
 					delay:      2,
 					wantLoaded: true,
+					wantNil:    false,
 				},
 			},
 		},
@@ -349,6 +351,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 					key:        "yo",
 					delay:      0,
 					wantLoaded: false,
+					wantNil:    true,
 				},
 			},
 		},
@@ -359,6 +362,7 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 					key:        "yo",
 					delay:      0,
 					wantLoaded: false,
+					wantNil:    true,
 				},
 			},
 		},
@@ -368,7 +372,8 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 				{
 					key:        "noExpire",
 					delay:      0,
-					wantLoaded: false,
+					wantLoaded: true,
+					wantNil:    true,
 				},
 			},
 		},
@@ -407,8 +412,21 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 				// Wait
 				<-time.After(time.Duration(testCase.delay) * time.Second)
 
-				if val, loaded := i.GetTTL(testCase.key); loaded != testCase.wantLoaded || val < testCase.delay {
-					t.Errorf("Get() = %v, %v, want >=%v, %v", ttl-testCase.delay, testCase.wantLoaded, val, loaded)
+				val, loaded := i.GetTTL(testCase.key)
+				if loaded != testCase.wantLoaded {
+					t.Errorf("Get() = %v, %v", testCase.wantLoaded, loaded)
+				}
+
+				if testCase.wantNil {
+					if val != nil {
+						t.Errorf("Get() = %v, want nil", val)
+					}
+				} else {
+					if val == nil {
+						t.Error("Get() = nil, want not nil")
+					} else if *val < testCase.delay {
+						t.Errorf("Get() = %v, want %v", *val, testCase.delay)
+					}
 				}
 			}
 		})

@@ -47,7 +47,7 @@ type databaseTestImplementation struct {
 		key string
 	}
 	getTTLReturn bool
-	getTTLTime   int64
+	getTTLTime   *int64
 }
 
 func (db *databaseTestImplementation) Create(data struct {
@@ -89,7 +89,7 @@ func (db *databaseTestImplementation) Delete(key string) bool {
 	return db.deleteReturn
 }
 
-func (db *databaseTestImplementation) GetTTL(key string) (int64, bool) {
+func (db *databaseTestImplementation) GetTTL(key string) (*int64, bool) {
 	db.getTTLCalls = append(db.getTTLCalls, struct {
 		key string
 	}{key})
@@ -408,10 +408,14 @@ func TestWrapper_deleteHandler(t *testing.T) {
 }
 
 func TestWrapper_getTTLHandler(t *testing.T) {
+	intPtr := func(v int64) *int64 {
+		return &v
+	}
+
 	tests := []struct {
 		name         string
 		key          string
-		ttl          int64
+		ttl          *int64
 		status       int
 		getTTLReturn bool
 		checkCalls   bool
@@ -419,7 +423,15 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 		{
 			name:         "Get an existing key value pair",
 			key:          "testKey",
-			ttl:          100,
+			ttl:          intPtr(100),
+			status:       http.StatusOK,
+			getTTLReturn: true,
+			checkCalls:   true,
+		},
+		{
+			name:         "Get a non-expiring key value pair",
+			key:          "testKey",
+			ttl:          nil,
 			status:       http.StatusOK,
 			getTTLReturn: true,
 			checkCalls:   true,
@@ -427,7 +439,7 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 		{
 			name:         "Try to read a non-existing key value pair",
 			key:          "testKey",
-			ttl:          100,
+			ttl:          intPtr(100),
 			status:       http.StatusNotFound,
 			getTTLReturn: false,
 			checkCalls:   true,
