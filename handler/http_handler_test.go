@@ -470,16 +470,18 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 				t.Errorf("response code = %v; want %v", w.Code, tt.status)
 			}
 
-			var body getTTLResponse
-			err := json.NewDecoder(w.Body).Decode(&body)
-			if err != nil {
-				t.Errorf("Failed to decode response body JSON: %v", err)
-			}
+			if tt.getTTLReturn {
+				var body getTTLResponse
+				err := json.NewDecoder(w.Body).Decode(&body)
+				if err != nil {
+					t.Errorf("Failed to decode response body JSON: %v", err)
+				}
 
-			expected := getTTLResponse{Key: tt.key, TTL: tt.ttl}
+				expected := getTTLResponse{Key: tt.key, TTL: tt.ttl}
 
-			if !reflect.DeepEqual(expected, body) {
-				t.Errorf("response body = %v; want %v", body, expected)
+				if !reflect.DeepEqual(expected, body) {
+					t.Errorf("response body = %v; want %v", body, expected)
+				}
 			}
 
 			if tt.checkCalls {

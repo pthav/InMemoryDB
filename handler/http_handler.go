@@ -68,6 +68,18 @@ type Wrapper struct {
 	broker pubSubBroker
 }
 
+// Helper function for writing JSON errors
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	err := json.NewEncoder(w).Encode(map[string]string{
+		"error": msg,
+	})
+	if err != nil {
+		return
+	}
+}
+
 // NewHandler Return a new HandlerWrapper instance with all routes set
 func NewHandler(db database, logger *slog.Logger) *Wrapper {
 	handler := &Wrapper{db: db, logger: logger, broker: pubSubBroker{channels: make(map[string][]chan string)}}
@@ -101,7 +113,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -109,7 +121,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 	validate := validator.New()
 	err = validate.Struct(rData)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Validation errors when parsing post request: %s", err.Error()), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Validation errors when parsing post request: %s", err.Error()))
 		return
 	}
 
@@ -120,7 +132,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 	}(rData))
 
 	if !set {
-		http.Error(w, "Could not add value to store", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed while adding key-value pair to store")
 		return
 	}
 
@@ -129,7 +141,7 @@ func (h *Wrapper) postHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("Error occurred while encoding json to post request", "error: ", err)
 	}
 }
 
@@ -142,7 +154,7 @@ func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if !loaded {
-		w.WriteHeader(http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "Key not found")
 		return
 	}
 
@@ -150,7 +162,7 @@ func (h *Wrapper) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewEncoder(w).Encode(response)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 }
@@ -210,15 +222,15 @@ func (h *Wrapper) getTTLHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if !loaded {
-		w.WriteHeader(http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "Key not found")
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 
 	err := json.NewEncoder(w).Encode(response)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 	}
 }
 
