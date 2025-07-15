@@ -4,8 +4,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// HTTP method-specific responses
+
+type HTTPPostResponse struct {
+	Status string `json:"status"`
+	Key    string `json:"key"`
+}
+
+type HTTPGetTTLResponse struct {
+	Status string `json:"status"`
+	Key    string `json:"key"`
+	TTL    *int64 `json:"ttl"`
+}
+
+type StatusOnlyResponse struct {
+	Status string `json:"status"`
+}
+
 // Common flags for child commands
-var port int
+var url string
 var key string
 var value string
 var channel string
@@ -28,4 +45,6 @@ func init() {
 	EndpointsCmd.AddCommand(deleteCmd)
 	EndpointsCmd.AddCommand(putCmd)
 	EndpointsCmd.AddCommand(postCmd)
+
+	EndpointsCmd.PersistentFlags().StringVarP(&url, "url", "u", "http://localhost:8080", "The url to use.")
 }

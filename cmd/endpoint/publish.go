@@ -21,7 +21,7 @@ message. publish -c=hello -m=world will publish 'world' to the channel 'hello' `
 		payload := fmt.Sprintf(`{"message": "%v"}`, message)
 
 		// Send Request
-		url := fmt.Sprintf("http://localhost:%v/v1/publish/%s", port, channel)
+		url := fmt.Sprintf("%v/v1/publish/%s", url, channel)
 		resp, err := http.Post(url, "application/json", strings.NewReader(payload))
 		if err != nil {
 			return err

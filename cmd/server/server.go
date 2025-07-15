@@ -5,8 +5,7 @@ import (
 )
 
 // Common flags for child commands
-var port int
-var value string
+var url string
 
 // ServerCmd represents the base command when called without any subcommands
 var ServerCmd = &cobra.Command{

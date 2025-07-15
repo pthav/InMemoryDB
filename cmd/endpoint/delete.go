@@ -15,10 +15,10 @@ var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete a key and its associated value.",
 	Long: `The key must be provided in order to delete the key value pair. The returned response code is printed
-to the console. delete -k=hello -p=8080 will send a delete request for the key 'hello' to a server on port 8080.`,
+to the console. delete -k=hello -u='localhost:8080'' will send a delete request for the key 'hello' to a server on port 8080.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Send request
-		url := fmt.Sprintf("http://localhost:%v/v1/keys/%v", port, key)
+		url := fmt.Sprintf("%v/v1/keys/%v", url, key)
 		req, err := http.NewRequest("DELETE", url, io.NopCloser(bytes.NewBufferString("")))
 		if err != nil {
 			return err
@@ -47,7 +47,6 @@ to the console. delete -k=hello -p=8080 will send a delete request for the key '
 }
 
 func init() {
-	deleteCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	deleteCmd.Flags().StringVarP(&key, "key", "k", "", "The key to delete in the database")
 	err := deleteCmd.MarkFlagRequired("key")
 	if err != nil {

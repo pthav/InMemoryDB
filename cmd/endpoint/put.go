@@ -33,7 +33,7 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 		fmt.Println(string(jsonBody))
 
 		// Send request
-		url := fmt.Sprintf("http://localhost:%v/v1/keys/%v", port, key)
+		url := fmt.Sprintf("%v/v1/keys/%v", url, key)
 		req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonBody))
 		if err != nil {
 			return err
@@ -68,7 +68,6 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 }
 
 func init() {
-	putCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	putCmd.Flags().StringVarP(&key, "key", "k", "", "The key to put into the database")
 	putCmd.Flags().StringVarP(&value, "value", "v", "", "The value to put into the database")
 	err := putCmd.MarkFlagRequired("key")

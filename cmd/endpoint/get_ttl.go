@@ -19,7 +19,7 @@ var getTTLCmd = &cobra.Command{
 remaining TTL for key 'hello'. The returned TTL will be null if it is a non-expiring key value pair."`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Send Request
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/v1/ttl/%s", port, key))
+		resp, err := http.Get(fmt.Sprintf("%v/v1/ttl/%s", url, key))
 		if err != nil {
 			return err
 		}
@@ -52,7 +52,6 @@ remaining TTL for key 'hello'. The returned TTL will be null if it is a non-expi
 }
 
 func init() {
-	getTTLCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	getTTLCmd.Flags().StringVarP(&key, "key", "k", "", "The key to access in the database")
 	err := getCmd.MarkFlagRequired("key")
 	if err != nil {

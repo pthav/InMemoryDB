@@ -1,50 +1,53 @@
 package endpoint
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
-	"io"
 	"net/http"
 )
+
+type HTTPGetResponse struct {
+	Status int    `json:"status"`
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Error  string `json:"error"`
+}
 
 // getCmd represents the get command
 var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get a key value pair.",
 	Long: `In order to get a stored key value pair from the database you must provide the key as a parameter.
-The returned response is printed to the console as json with the status code. For example, get -k=hello will return the 
-value associated with the hello key in the database.`,
+The returned response is printed to the console as json with the status code. For example, 
+get -k=hello -u='localhost:8080' will return the value associated with the hello key in the database listening
+on port 8080.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Send Request
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/v1/keys/%s", port, key))
+		resp, err := http.Get(fmt.Sprintf("%v/v1/keys/%s", url, key))
 		if err != nil {
-			return err
+			return errors.New(fmt.Sprintf("error creating request: %v", err))
 		}
 
 		defer resp.Body.Close()
 
 		// Read response body
-		body, err := io.ReadAll(resp.Body)
+		var response HTTPGetResponse
+		err = json.NewDecoder(resp.Body).Decode(&response)
 		if err != nil {
-			return errors.New("error reading response from server")
+			return errors.New("error decoding response from server")
 		}
+		response.Status = resp.StatusCode
 
-		if resp.StatusCode >= 400 {
-			fmt.Println("Status code:", resp.StatusCode)
-			fmt.Println("Response body:", string(body))
-			return nil
-		}
-
-		var out bytes.Buffer
-		err = json.Indent(&out, body, "", "  ")
+		out, err := json.MarshalIndent(response, "", "\t")
 		if err != nil {
-			fmt.Println("Invalid JSON:", string(body))
+			return errors.New(fmt.Sprintf("error marshalling response from server: %v", err))
 		} else {
-			fmt.Println("Status code:", resp.StatusCode)
-			fmt.Println(out.String())
+			_, err := cmd.OutOrStdout().Write(out)
+			if err != nil {
+				return err
+			}
 		}
 
 		err = resp.Body.Close()
@@ -57,7 +60,6 @@ value associated with the hello key in the database.`,
 }
 
 func init() {
-	getCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	getCmd.Flags().StringVarP(&key, "key", "k", "", "The key to access in the database")
 	err := getCmd.MarkFlagRequired("key")
 	if err != nil {

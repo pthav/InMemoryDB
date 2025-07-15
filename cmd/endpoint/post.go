@@ -31,7 +31,7 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 		}
 
 		// Send request
-		url := fmt.Sprintf("http://localhost:%v/v1/keys", port)
+		url := fmt.Sprintf("%v/v1/keys", url)
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 		if err != nil {
 			return err
@@ -71,7 +71,6 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 }
 
 func init() {
-	postCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	postCmd.Flags().StringVarP(&value, "value", "v", "", "The value to post to the database")
 	err := postCmd.MarkFlagRequired("value")
 	if err != nil {

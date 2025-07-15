@@ -28,7 +28,7 @@ will subscribe to channel 'hello' for up to 30 seconds.`,
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		url := fmt.Sprintf("http://localhost:%v/v1/subscribe/%s", port, channel)
+		url := fmt.Sprintf("%v/v1/subscribe/%s", url, channel)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return err

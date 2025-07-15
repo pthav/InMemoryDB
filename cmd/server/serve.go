@@ -44,9 +44,9 @@ Flags can be provided to configure the database`,
 			return err
 		}
 
-		fmt.Printf("Created InMemoryDatabase instance running at localhost:%v\n", port)
+		fmt.Printf("Created InMemoryDatabase instance running at %v\n", url)
 		h := handler.NewHandler(db, logger)
-		err = http.ListenAndServe(fmt.Sprintf("localhost:%v", port), h)
+		err = http.ListenAndServe(url, h)
 		if err != nil {
 			return err
 		}
@@ -57,7 +57,7 @@ Flags can be provided to configure the database`,
 
 // go run main.go serve -p 7070 -c 6 --persist --persist-file persist.json --startup-file startup.json
 func init() {
-	serveCmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on.")
+	serveCmd.Flags().StringVarP(&url, "url", "u", "localhost:8080", "Url to listen for requests on")
 	serveCmd.Flags().StringVar(&startupFile, "startup-file", "", "File containing json data to initialize the database with.")
 	serveCmd.Flags().IntVarP(&persistencePeriod, "persist-cycle", "c", 60, "How long the persistence cycle should be in seconds.")
 	serveCmd.Flags().StringVar(&persistFile, "persist-file", "", "File to persist the database to.")
