@@ -1,4 +1,4 @@
-package cmd
+package endpoint
 
 import (
 	"bytes"
@@ -74,8 +74,6 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 }
 
 func init() {
-	rootCmd.AddCommand(postCmd)
-
 	postCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	postCmd.Flags().StringVarP(&value, "value", "v", "", "The value to post to the database")
 	err := postCmd.MarkFlagRequired("value")

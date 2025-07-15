@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 
+	"InMemoryDB/cmd/endpoint"
 	"github.com/spf13/cobra"
 )
 
@@ -29,4 +30,5 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddCommand(endpoint.EndpointsCmd)
 }

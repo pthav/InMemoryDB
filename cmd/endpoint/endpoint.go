@@ -1,0 +1,29 @@
+package endpoint
+
+import (
+	"github.com/spf13/cobra"
+)
+
+// Common flags for child commands
+var port int
+var key string
+var value string
+
+// EndpointsCmd represents the base command for endpoint commands
+var EndpointsCmd = &cobra.Command{
+	Use:   "endpoint",
+	Short: "Send requests to a database endpoint",
+	Long: `This command contains sub commands for sending requests to the endpoint for an instance
+of InMemoryDB.`,
+	Run: func(cmd *cobra.Command, args []string) {},
+}
+
+func init() {
+	EndpointsCmd.AddCommand(getTTLCmd)
+	EndpointsCmd.AddCommand(publishCmd)
+	EndpointsCmd.AddCommand(subscribeCmd)
+	EndpointsCmd.AddCommand(getCmd)
+	EndpointsCmd.AddCommand(deleteCmd)
+	EndpointsCmd.AddCommand(putCmd)
+	EndpointsCmd.AddCommand(postCmd)
+}

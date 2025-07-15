@@ -1,4 +1,4 @@
-package cmd
+package endpoint
 
 import (
 	"bytes"
@@ -66,8 +66,6 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 }
 
 func init() {
-	rootCmd.AddCommand(putCmd)
-
 	putCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	putCmd.Flags().StringVarP(&key, "key", "k", "", "The key to put into the database")
 	putCmd.Flags().StringVarP(&value, "value", "v", "", "The value to put into the database")

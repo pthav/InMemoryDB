@@ -1,4 +1,4 @@
-package cmd
+package endpoint
 
 import (
 	"bytes"
@@ -55,8 +55,6 @@ value associated with the hello key in the database.`,
 }
 
 func init() {
-	rootCmd.AddCommand(getCmd)
-
 	getCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	getCmd.Flags().StringVarP(&key, "key", "k", "", "The key to access in the database")
 	err := getCmd.MarkFlagRequired("key")

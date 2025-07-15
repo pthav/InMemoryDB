@@ -1,4 +1,4 @@
-package cmd
+package endpoint
 
 import (
 	"bytes"
@@ -50,8 +50,6 @@ to the console. delete -k=hello -p=8080 will send a delete request for the key '
 }
 
 func init() {
-	rootCmd.AddCommand(deleteCmd)
-
 	deleteCmd.Flags().IntVarP(&port, "port", "p", 8080, "The port to listen on.")
 	deleteCmd.Flags().StringVarP(&key, "key", "k", "", "The key to delete in the database")
 	err := deleteCmd.MarkFlagRequired("key")
