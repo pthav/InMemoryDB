@@ -45,6 +45,8 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 			return err
 		}
 
+		defer resp.Body.Close()
+
 		// Read response
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {

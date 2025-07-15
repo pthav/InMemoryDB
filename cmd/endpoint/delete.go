@@ -29,6 +29,8 @@ to the console. delete -k=hello -p=8080 will send a delete request for the key '
 			return err
 		}
 
+		defer resp.Body.Close()
+
 		// Read response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -38,11 +40,6 @@ to the console. delete -k=hello -p=8080 will send a delete request for the key '
 		fmt.Println("Status code:", resp.StatusCode)
 		if resp.StatusCode >= 400 {
 			fmt.Println("Response body:", string(body))
-		}
-
-		err = resp.Body.Close()
-		if err != nil {
-			return errors.New("error closing response body")
 		}
 
 		return nil

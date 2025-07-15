@@ -43,6 +43,8 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 			return err
 		}
 
+		defer resp.Body.Close()
+
 		// Read response
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -62,11 +64,6 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 		} else {
 			fmt.Println("Status code:", resp.StatusCode)
 			fmt.Println(out.String())
-		}
-
-		err = resp.Body.Close()
-		if err != nil {
-			return errors.New("error closing response body")
 		}
 
 		return nil

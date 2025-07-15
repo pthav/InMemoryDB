@@ -8,13 +8,15 @@ import (
 var port int
 var key string
 var value string
+var channel string
 
 // EndpointsCmd represents the base command for endpoint commands
 var EndpointsCmd = &cobra.Command{
 	Use:   "endpoint",
 	Short: "Send requests to a database endpoint",
 	Long: `This command contains sub commands for sending requests to the endpoint for an instance
-of InMemoryDB.`,
+of InMemoryDB. The command endpoint get -k=hello -p=8080 will get the key value pair for the database 
+listening on port 8080`,
 	Run: func(cmd *cobra.Command, args []string) {},
 }
 

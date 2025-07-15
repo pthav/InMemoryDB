@@ -24,6 +24,8 @@ value associated with the hello key in the database.`,
 			return err
 		}
 
+		defer resp.Body.Close()
+
 		// Read response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
