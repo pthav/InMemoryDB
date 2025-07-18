@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
-	"net/http"
 )
 
 type HTTPGetResponse struct {
@@ -24,38 +23,23 @@ The returned response is printed to the console as json with the status code. Fo
 get -k=hello -u='localhost:8080' will return the value associated with the hello key in the database listening
 on port 8080.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Send Request
-		resp, err := http.Get(fmt.Sprintf("%v/v1/keys/%s", url, key))
-		if err != nil {
-			return errors.New(fmt.Sprintf("error creating request: %v", err))
-		}
+		// Send request
+		url := fmt.Sprintf("%v/v1/keys/%s", rootURL, key)
 
-		defer resp.Body.Close()
+		body, status, err := getResponse("GET", url, nil)
+		if err != nil {
+			return err
+		}
 
 		// Read response body
 		var response HTTPGetResponse
-		err = json.NewDecoder(resp.Body).Decode(&response)
+		err = json.Unmarshal(body, &response)
 		if err != nil {
 			return errors.New("error decoding response from server")
 		}
-		response.Status = resp.StatusCode
+		response.Status = status
 
-		out, err := json.MarshalIndent(response, "", "\t")
-		if err != nil {
-			return errors.New(fmt.Sprintf("error marshalling response from server: %v", err))
-		} else {
-			_, err := cmd.OutOrStdout().Write(out)
-			if err != nil {
-				return err
-			}
-		}
-
-		err = resp.Body.Close()
-		if err != nil {
-			return errors.New("error closing response body")
-		}
-
-		return nil
+		return outputResponse(cmd, response)
 	},
 }
 

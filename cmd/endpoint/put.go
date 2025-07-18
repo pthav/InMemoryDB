@@ -1,13 +1,7 @@
 package endpoint
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
-
 	"github.com/spf13/cobra"
 )
 
@@ -26,44 +20,16 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 			Value: value,
 		}
 
-		jsonBody, err := json.Marshal(requestBody)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(jsonBody))
-
 		// Send request
-		url := fmt.Sprintf("%v/v1/keys/%v", url, key)
-		req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonBody))
+		url := fmt.Sprintf("%v/v1/keys/%v", rootURL, key)
+		_, status, err := getResponse("PUT", url, requestBody)
 		if err != nil {
 			return err
 		}
 
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
+		response := StatusPlusErrorResponse{Status: status}
 
-		defer resp.Body.Close()
-
-		// Read response
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return errors.New("error reading response from server")
-		}
-
-		fmt.Println("Status code:", resp.StatusCode)
-		if resp.StatusCode >= 400 {
-			fmt.Println("Response body:", string(body))
-		}
-
-		err = resp.Body.Close()
-		if err != nil {
-			return errors.New("error closing response body")
-		}
-
-		return nil
+		return outputResponse(cmd, response)
 	},
 }
 

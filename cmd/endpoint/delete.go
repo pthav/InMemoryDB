@@ -1,12 +1,7 @@
 package endpoint
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
-
 	"github.com/spf13/cobra"
 )
 
@@ -18,31 +13,15 @@ var deleteCmd = &cobra.Command{
 to the console. delete -k=hello -u='localhost:8080'' will send a delete request for the key 'hello' to a server on port 8080.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Send request
-		url := fmt.Sprintf("%v/v1/keys/%v", url, key)
-		req, err := http.NewRequest("DELETE", url, io.NopCloser(bytes.NewBufferString("")))
+		url := fmt.Sprintf("%v/v1/keys/%v", rootURL, key)
+		_, status, err := getResponse("DELETE", url, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
+		response := StatusPlusErrorResponse{Status: status}
 
-		defer resp.Body.Close()
-
-		// Read response body
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return errors.New("error reading response from server")
-		}
-
-		fmt.Println("Status code:", resp.StatusCode)
-		if resp.StatusCode >= 400 {
-			fmt.Println("Response body:", string(body))
-		}
-
-		return nil
+		return outputResponse(cmd, response)
 	},
 }
 

@@ -1,15 +1,18 @@
 package endpoint
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-
 	"github.com/spf13/cobra"
 )
+
+type HTTPGetTTLResponse struct {
+	Status int    `json:"status"`
+	Key    string `json:"key"`
+	TTL    *int64 `json:"ttl"`
+	Error  string `json:"error"`
+}
 
 // getTTLCmd represents the getTtl command
 var getTTLCmd = &cobra.Command{
@@ -18,36 +21,23 @@ var getTTLCmd = &cobra.Command{
 	Long: `This command fetches the remaining TTL in seconds for a a key value pair. getTTL -k=hello will get the
 remaining TTL for key 'hello'. The returned TTL will be null if it is a non-expiring key value pair."`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Send Request
-		resp, err := http.Get(fmt.Sprintf("%v/v1/ttl/%s", url, key))
+		// Send request
+		url := fmt.Sprintf("%v/v1/ttl/%s", rootURL, key)
+
+		body, status, err := getResponse("GET", url, nil)
 		if err != nil {
 			return err
 		}
 
-		defer resp.Body.Close()
-
 		// Read response body
-		body, err := io.ReadAll(resp.Body)
+		var response HTTPGetTTLResponse
+		err = json.Unmarshal(body, &response)
 		if err != nil {
-			return errors.New("error reading response from server")
+			return errors.New("error decoding response from server")
 		}
+		response.Status = status
 
-		if resp.StatusCode >= 400 {
-			fmt.Println("Status code:", resp.StatusCode)
-			fmt.Println("Response body:", string(body))
-			return nil
-		}
-
-		var out bytes.Buffer
-		err = json.Indent(&out, body, "", "  ")
-		if err != nil {
-			fmt.Println("Invalid JSON:", string(body))
-		} else {
-			fmt.Println("Status code:", resp.StatusCode)
-			fmt.Println(out.String())
-		}
-
-		return nil
+		return outputResponse(cmd, response)
 	},
 }
 

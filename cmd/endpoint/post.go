@@ -1,14 +1,15 @@
 package endpoint
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
-	"io"
-	"net/http"
 )
+
+type HTTPPostResponse struct {
+	Status int    `json:"status"`
+	Key    string `json:"key"`
+	Error  string `json:"error"`
+}
 
 // postCmd represents the post command
 var postCmd = &cobra.Command{
@@ -25,48 +26,16 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 			Value: value,
 		}
 
-		jsonBody, err := json.Marshal(requestBody)
-		if err != nil {
-			return err
-		}
-
 		// Send request
-		url := fmt.Sprintf("%v/v1/keys", url)
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+		url := fmt.Sprintf("%v/v1/keys", rootURL)
+		_, status, err := getResponse("POST", url, requestBody)
 		if err != nil {
 			return err
 		}
 
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
+		response := StatusPlusErrorResponse{Status: status}
 
-		defer resp.Body.Close()
-
-		// Read response
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return errors.New("error reading response from server")
-		}
-
-		if resp.StatusCode >= 400 {
-			fmt.Println("Status code:", resp.StatusCode)
-			fmt.Println("Response body:", string(body))
-			return nil
-		}
-
-		var out bytes.Buffer
-		err = json.Indent(&out, body, "", "  ")
-		if err != nil {
-			fmt.Println("Invalid JSON:", string(body))
-		} else {
-			fmt.Println("Status code:", resp.StatusCode)
-			fmt.Println(out.String())
-		}
-
-		return nil
+		return outputResponse(cmd, response)
 	},
 }
 

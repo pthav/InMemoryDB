@@ -1,28 +1,71 @@
 package endpoint
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/spf13/cobra"
+	"io"
+	"net/http"
 )
 
-// HTTP method-specific responses
+// outputResponse is a helper function for outputting JSON to a command's out file and returning an error if there is
+// one.
+func outputResponse(cmd *cobra.Command, response any) error {
+	out, err := json.MarshalIndent(response, "", "\t")
+	if err != nil {
+		return errors.New(fmt.Sprintf("error marshalling response: %v", err))
+	}
 
-type HTTPPostResponse struct {
-	Status string `json:"status"`
-	Key    string `json:"key"`
+	_, err = cmd.OutOrStdout().Write(out)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-type HTTPGetTTLResponse struct {
-	Status string `json:"status"`
-	Key    string `json:"key"`
-	TTL    *int64 `json:"ttl"`
+// getResponse is a helper function for sending a request and returning the response body, status, and an error
+// if there is any.
+func getResponse(method string, url string, requestBody any) ([]byte, int, error) {
+	// Create request body
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return []byte{}, 0, errors.New(fmt.Sprintf("error marshalling request body: %v", err))
+	}
+
+	// Create the request
+	req, err := http.NewRequest(method, url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return []byte{}, 0, errors.New(fmt.Sprintf("error creating request: %v", err))
+	}
+
+	// Send the request
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return []byte{}, 0, errors.New(fmt.Sprintf("error sending request: %v", err))
+	}
+	defer resp.Body.Close()
+
+	// Read the response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []byte{}, 0, errors.New(fmt.Sprintf("error reading response from server: %v", err))
+	}
+
+	return body, resp.StatusCode, nil
 }
 
-type StatusOnlyResponse struct {
-	Status string `json:"status"`
+// Generic HTTP method response
+
+type StatusPlusErrorResponse struct {
+	Status int    `json:"status"`
+	Error  string `json:"error"`
 }
 
 // Common flags for child commands
-var url string
+var rootURL string
 var key string
 var value string
 var channel string
@@ -46,5 +89,5 @@ func init() {
 	EndpointsCmd.AddCommand(putCmd)
 	EndpointsCmd.AddCommand(postCmd)
 
-	EndpointsCmd.PersistentFlags().StringVarP(&url, "url", "u", "http://localhost:8080", "The url to use.")
+	EndpointsCmd.PersistentFlags().StringVarP(&rootURL, "rootURL", "u", "http://localhost:8080", "The rootURL to use.")
 }
