@@ -101,6 +101,8 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 	}
 
 	// Prevent persistence between test cases
+	rootCmd.ResetCommands()
+	rootCmd.AddCommand(endpoint.NewEndpointsCmd())
 	out, err := execute(t, rootCmd, args...)
 
 	if (err != nil) != tt.shouldError {
@@ -180,6 +182,13 @@ func TestCommand_delete(t *testing.T) {
 			badURL:       false,
 			shouldError:  false,
 		},
+		{
+			name:             "Missing the key flag",
+			alternateArgs:    []string{"endpoint", "delete"},
+			useAlternateArgs: true,
+			shouldError:      true,
+			expectedError:    "required",
+		},
 		badURLTest,
 	}
 
@@ -187,7 +196,11 @@ func TestCommand_delete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys/{key}"
 			args := []string{"endpoint", "delete", "-k", tt.key, "-u"}
-			testHelper(t, tt, url, args)
+			if tt.useAlternateArgs {
+				testHelper(t, tt, url, tt.alternateArgs)
+			} else {
+				testHelper(t, tt, url, args)
+			}
 		})
 	}
 }
@@ -204,6 +217,20 @@ func TestCommand_put(t *testing.T) {
 			badURL:       false,
 			shouldError:  false,
 		},
+		{
+			name:             "Missing the key flag",
+			alternateArgs:    []string{"endpoint", "put", "-v", "world"},
+			useAlternateArgs: true,
+			shouldError:      true,
+			expectedError:    "required",
+		},
+		{
+			name:             "Missing the value flag",
+			alternateArgs:    []string{"endpoint", "put", "-k", "hello"},
+			useAlternateArgs: true,
+			shouldError:      true,
+			expectedError:    "required",
+		},
 		badURLTest,
 	}
 
@@ -211,7 +238,11 @@ func TestCommand_put(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys/{key}"
 			args := []string{"endpoint", "put", "-k", tt.key, "-v", tt.value, "-u"}
-			testHelper(t, tt, url, args)
+			if tt.useAlternateArgs {
+				testHelper(t, tt, url, tt.alternateArgs)
+			} else {
+				testHelper(t, tt, url, args)
+			}
 		})
 	}
 }
@@ -227,6 +258,13 @@ func TestCommand_post(t *testing.T) {
 			badURL:       false,
 			shouldError:  false,
 		},
+		{
+			name:             "Missing the value flag",
+			alternateArgs:    []string{"endpoint", "post"},
+			useAlternateArgs: true,
+			shouldError:      true,
+			expectedError:    "required",
+		},
 		badURLTest,
 	}
 
@@ -234,7 +272,11 @@ func TestCommand_post(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys/{key}"
 			args := []string{"endpoint", "post", "-v", tt.value, "-u"}
-			testHelper(t, tt, url, args)
+			if tt.useAlternateArgs {
+				testHelper(t, tt, url, tt.alternateArgs)
+			} else {
+				testHelper(t, tt, url, args)
+			}
 		})
 	}
 }
@@ -254,6 +296,13 @@ func TestCommand_getTTL(t *testing.T) {
 			badURL:       false,
 			shouldError:  false,
 		},
+		{
+			name:             "Missing the key flag",
+			alternateArgs:    []string{"endpoint", "getTTL"},
+			useAlternateArgs: true,
+			shouldError:      true,
+			expectedError:    "required",
+		},
 		badJSONTest,
 		badURLTest,
 	}
@@ -262,7 +311,11 @@ func TestCommand_getTTL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/ttl/{key}"
 			args := []string{"endpoint", "getTTL", "-k", tt.key, "-u"}
-			testHelper(t, tt, url, args)
+			if tt.useAlternateArgs {
+				testHelper(t, tt, url, tt.alternateArgs)
+			} else {
+				testHelper(t, tt, url, args)
+			}
 		})
 	}
 }

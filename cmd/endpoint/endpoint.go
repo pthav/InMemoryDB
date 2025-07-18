@@ -64,30 +64,40 @@ type StatusPlusErrorResponse struct {
 	Error  string `json:"error"`
 }
 
-// Common flags for child commands
-var rootURL string
-var key string
-var value string
-var channel string
+// Options defines configuration flags for endpoint and its subcommands.
+type Options struct {
+	rootURL string
+	key     string
+	value   string
+	channel string
+	timeout int
+	message string
+}
 
-// EndpointsCmd represents the base command for endpoint commands
-var EndpointsCmd = &cobra.Command{
-	Use:   "endpoint",
-	Short: "Send requests to a database endpoint",
-	Long: `This command contains sub commands for sending requests to the endpoint for an instance
+func NewEndpointsCmd() *cobra.Command {
+	// endpointsCmd represents the base command for endpoint commands
+	var endpointsCmd = &cobra.Command{
+		Use:   "endpoint",
+		Short: "Send requests to a database endpoint",
+		Long: `This command contains sub commands for sending requests to the endpoint for an instance
 of InMemoryDB. The command endpoint get -k=hello -p=8080 will get the key value pair for the database 
 listening on port 8080`,
-	Run: func(cmd *cobra.Command, args []string) {},
+		Run: func(cmd *cobra.Command, args []string) {},
+	}
+	o := Options{}
+
+	endpointsCmd.PersistentFlags().StringVarP(&o.rootURL, "rootURL", "u", "http://localhost:8080", "The rootURL to use.")
+
+	endpointsCmd.AddCommand(newGetTTLCmd(&o))
+	endpointsCmd.AddCommand(newPublishCmd(&o))
+	endpointsCmd.AddCommand(newSubscribeCmd(&o))
+	endpointsCmd.AddCommand(newGetCmd(&o))
+	endpointsCmd.AddCommand(newDeleteCmd(&o))
+	endpointsCmd.AddCommand(newPutCmd(&o))
+	endpointsCmd.AddCommand(newPostCmd(&o))
+
+	return endpointsCmd
 }
 
 func init() {
-	EndpointsCmd.AddCommand(getTTLCmd)
-	EndpointsCmd.AddCommand(publishCmd)
-	EndpointsCmd.AddCommand(subscribeCmd)
-	EndpointsCmd.AddCommand(getCmd)
-	EndpointsCmd.AddCommand(deleteCmd)
-	EndpointsCmd.AddCommand(putCmd)
-	EndpointsCmd.AddCommand(postCmd)
-
-	EndpointsCmd.PersistentFlags().StringVarP(&rootURL, "rootURL", "u", "http://localhost:8080", "The rootURL to use.")
 }

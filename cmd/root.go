@@ -26,6 +26,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(endpoint.EndpointsCmd)
+	rootCmd.AddCommand(endpoint.NewEndpointsCmd())
 	rootCmd.AddCommand(server.ServerCmd)
 }

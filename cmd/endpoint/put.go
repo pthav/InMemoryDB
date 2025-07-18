@@ -5,43 +5,42 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// putCmd represents the put command
-var putCmd = &cobra.Command{
-	Use:   "put",
-	Short: "Put a key value pair into the database",
-	Long: `Put will update the key if it exists in the database or create a new one and attach the passed value to it.
+func newPutCmd(o *Options) *cobra.Command {
+	// putCmd represents the put command
+	var putCmd = &cobra.Command{
+		Use:   "put",
+		Short: "Put a key value pair into the database",
+		Long: `Put will update the key if it exists in the database or create a new one and attach the passed value to it.
 The value and key are required for the put request. The response status code is printed to the console. 
 put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the database listening on port 8080.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Create request body
-		requestBody := struct {
-			Value string `json:"value"`
-		}{
-			Value: value,
-		}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Create request body
+			requestBody := struct {
+				Value string `json:"value"`
+			}{
+				Value: o.value,
+			}
 
-		// Send request
-		url := fmt.Sprintf("%v/v1/keys/%v", rootURL, key)
-		_, status, err := getResponse("PUT", url, requestBody)
-		if err != nil {
-			return err
-		}
+			// Send request
+			url := fmt.Sprintf("%v/v1/keys/%v", o.rootURL, o.key)
+			_, status, err := getResponse("PUT", url, requestBody)
+			if err != nil {
+				return err
+			}
 
-		response := StatusPlusErrorResponse{Status: status}
+			response := StatusPlusErrorResponse{Status: status}
 
-		return outputResponse(cmd, response)
-	},
+			return outputResponse(cmd, response)
+		},
+	}
+
+	putCmd.Flags().StringVarP(&o.key, "key", "k", "", "The key to put into the database")
+	putCmd.Flags().StringVarP(&o.value, "value", "v", "", "The value to put into the database")
+	_ = putCmd.MarkFlagRequired("key")
+	_ = putCmd.MarkFlagRequired("value")
+
+	return putCmd
 }
 
 func init() {
-	putCmd.Flags().StringVarP(&key, "key", "k", "", "The key to put into the database")
-	putCmd.Flags().StringVarP(&value, "value", "v", "", "The value to put into the database")
-	err := putCmd.MarkFlagRequired("key")
-	if err != nil {
-		return
-	}
-	err = putCmd.MarkFlagRequired("value")
-	if err != nil {
-		return
-	}
 }
