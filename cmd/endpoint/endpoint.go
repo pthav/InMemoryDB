@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
-	"io"
 	"net/http"
 )
 
@@ -25,36 +24,36 @@ func outputResponse(cmd *cobra.Command, response any) error {
 	return nil
 }
 
-// getResponse is a helper function for sending a request and returning the response body, status, and an error
+// getResponse is a helper function for sending a request and returning the status and an error
 // if there is any.
-func getResponse(method string, url string, requestBody any) ([]byte, int, error) {
+func getResponse(method string, url string, requestBody any, response any) (int, error) {
 	// Create request body
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		return []byte{}, 0, errors.New(fmt.Sprintf("error marshalling request body: %v", err))
+		return 0, errors.New(fmt.Sprintf("error marshalling request body: %v", err))
 	}
 
 	// Create the request
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return []byte{}, 0, errors.New(fmt.Sprintf("error creating request: %v", err))
+		return 0, errors.New(fmt.Sprintf("error creating request: %v", err))
 	}
 
 	// Send the request
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return []byte{}, 0, errors.New(fmt.Sprintf("error sending request: %v", err))
+		return 0, errors.New(fmt.Sprintf("error sending request: %v", err))
 	}
 	defer resp.Body.Close()
 
 	// Read the response
-	body, err := io.ReadAll(resp.Body)
+	err = json.NewDecoder(resp.Body).Decode(response)
 	if err != nil {
-		return []byte{}, 0, errors.New(fmt.Sprintf("error reading response from server: %v", err))
+		return 0, errors.New(fmt.Sprintf("error decoding response from server: %v", err))
 	}
 
-	return body, resp.StatusCode, nil
+	return resp.StatusCode, nil
 }
 
 // Generic HTTP method response

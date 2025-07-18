@@ -2,9 +2,6 @@ package endpoint
 
 import (
 	"fmt"
-	"net/http"
-	"strings"
-
 	"github.com/spf13/cobra"
 )
 
@@ -17,20 +14,22 @@ func newPublishCmd(o *Options) *cobra.Command {
 message. publish -c=hello -m=world will publish 'world' to the channel 'hello' `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create request body
-			payload := fmt.Sprintf(`{"message": "%v"}`, o.message)
+			payload := struct {
+				Message string `json:"message"`
+			}{
+				Message: o.message,
+			}
 
 			// Send Request
+			var response StatusPlusErrorResponse
 			url := fmt.Sprintf("%v/v1/publish/%s", o.rootURL, o.channel)
-			resp, err := http.Post(url, "application/json", strings.NewReader(payload))
+			status, err := getResponse("POST", url, payload, &response)
 			if err != nil {
 				return err
 			}
+			response.Status = status
 
-			defer resp.Body.Close()
-
-			fmt.Println("Status code:", resp.StatusCode)
-
-			return nil
+			return outputResponse(cmd, response)
 		},
 	}
 

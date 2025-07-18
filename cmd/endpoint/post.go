@@ -28,13 +28,13 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 			}
 
 			// Send request
+			var response HTTPPostResponse
 			url := fmt.Sprintf("%v/v1/keys", o.rootURL)
-			_, status, err := getResponse("POST", url, requestBody)
+			status, err := getResponse("POST", url, requestBody, &response)
 			if err != nil {
 				return err
 			}
-
-			response := StatusPlusErrorResponse{Status: status}
+			response.Status = status
 
 			return outputResponse(cmd, response)
 		},

@@ -1,8 +1,6 @@
 package endpoint
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
 )
@@ -25,18 +23,11 @@ get -k=hello -u='localhost:8080' will return the value associated with the hello
 on port 8080.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Send request
+			var response HTTPGetResponse
 			url := fmt.Sprintf("%v/v1/keys/%s", o.rootURL, o.key)
-
-			body, status, err := getResponse("GET", url, nil)
+			status, err := getResponse("GET", url, nil, &response)
 			if err != nil {
 				return err
-			}
-
-			// Read response body
-			var response HTTPGetResponse
-			err = json.Unmarshal(body, &response)
-			if err != nil {
-				return errors.New("error decoding response from server")
 			}
 			response.Status = status
 

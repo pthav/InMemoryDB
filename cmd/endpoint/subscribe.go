@@ -37,7 +37,6 @@ will subscribe to channel 'hello' for up to 30 seconds.`,
 			if err != nil {
 				return errors.New(fmt.Sprintf("Reading response from server: %v", err))
 			}
-
 			defer resp.Body.Close()
 
 			reader := bufio.NewReader(resp.Body)
@@ -55,7 +54,10 @@ will subscribe to channel 'hello' for up to 30 seconds.`,
 
 				// Only print valid SSE output
 				if strings.HasPrefix(line, "data: ") {
-					fmt.Println(line)
+					_, err = cmd.OutOrStdout().Write([]byte(line))
+					if err != nil {
+						return err
+					}
 				}
 			}
 		},

@@ -1,8 +1,6 @@
 package endpoint
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
 )
@@ -23,18 +21,11 @@ func newGetTTLCmd(o *Options) *cobra.Command {
 remaining TTL for key 'hello'. The returned TTL will be null if it is a non-expiring key value pair."`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Send request
+			var response HTTPGetTTLResponse
 			url := fmt.Sprintf("%v/v1/ttl/%s", o.rootURL, o.key)
-
-			body, status, err := getResponse("GET", url, nil)
+			status, err := getResponse("GET", url, nil, &response)
 			if err != nil {
 				return err
-			}
-
-			// Read response body
-			var response HTTPGetTTLResponse
-			err = json.Unmarshal(body, &response)
-			if err != nil {
-				return errors.New("error decoding response from server")
 			}
 			response.Status = status
 

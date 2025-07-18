@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"InMemoryDB/cmd/endpoint"
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,9 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 type testCase struct {
@@ -101,9 +104,7 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 	}
 
 	// Prevent persistence between test cases
-	rootCmd.ResetCommands()
-	rootCmd.AddCommand(endpoint.NewEndpointsCmd())
-	out, err := execute(t, rootCmd, args...)
+	out, err := execute(t, newRootCmd(), args...)
 
 	if (err != nil) != tt.shouldError {
 		t.Errorf("expected shouldError(%v), got %v", tt.shouldError, err)
@@ -119,6 +120,12 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 		switch tt.response.(type) {
 		case endpoint.HTTPGetResponse:
 			result = new(endpoint.HTTPGetResponse)
+		case endpoint.HTTPPostResponse:
+			result = new(endpoint.HTTPPostResponse)
+		case endpoint.HTTPGetTTLResponse:
+			result = new(endpoint.HTTPGetTTLResponse)
+		case endpoint.StatusPlusErrorResponse:
+			result = new(endpoint.StatusPlusErrorResponse)
 		}
 
 		err = json.Unmarshal([]byte(out), &result)
@@ -132,6 +139,18 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 			if !reflect.DeepEqual(result, &expected) {
 				t.Errorf("got %v\nwant %v", result, &expected)
 			}
+		case endpoint.HTTPPostResponse:
+			if !reflect.DeepEqual(result, &expected) {
+				t.Errorf("got %v\nwant %v", result, &expected)
+			}
+		case endpoint.HTTPGetTTLResponse:
+			if !reflect.DeepEqual(result, &expected) {
+				t.Errorf("got %v\nwant %v", result, &expected)
+			}
+		case endpoint.StatusPlusErrorResponse:
+			if !reflect.DeepEqual(result, &expected) {
+				t.Errorf("got %v\nwant %v", result, &expected)
+			}
 		}
 	}
 }
@@ -142,7 +161,7 @@ func TestCommand_get(t *testing.T) {
 			name:         "Test forwards response",
 			key:          "hello",
 			returnStatus: 200,
-			response:     endpoint.HTTPGetResponse{Status: 200, Key: "hello", Value: "world", Error: ""},
+			response:     endpoint.HTTPGetResponse{Status: 200, Key: "hello", Value: "world", Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -177,7 +196,7 @@ func TestCommand_delete(t *testing.T) {
 			name:         "Test forwards response",
 			key:          "hello",
 			returnStatus: 200,
-			response:     endpoint.StatusPlusErrorResponse{Status: 200},
+			response:     endpoint.StatusPlusErrorResponse{Status: 200, Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -212,7 +231,7 @@ func TestCommand_put(t *testing.T) {
 			key:          "hello",
 			value:        "world",
 			returnStatus: 200,
-			response:     endpoint.StatusPlusErrorResponse{Status: 200},
+			response:     endpoint.StatusPlusErrorResponse{Status: 200, Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -253,7 +272,7 @@ func TestCommand_post(t *testing.T) {
 			name:         "Test forwards response",
 			returnStatus: 200,
 			value:        "world",
-			response:     endpoint.HTTPPostResponse{Status: 200, Key: "postKey"},
+			response:     endpoint.HTTPPostResponse{Status: 200, Key: "postKey", Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -270,7 +289,7 @@ func TestCommand_post(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url := "/v1/keys/{key}"
+			url := "/v1/keys"
 			args := []string{"endpoint", "post", "-v", tt.value, "-u"}
 			if tt.useAlternateArgs {
 				testHelper(t, tt, url, tt.alternateArgs)
@@ -291,7 +310,7 @@ func TestCommand_getTTL(t *testing.T) {
 			name:         "Test forwards response",
 			returnStatus: 200,
 			key:          "hello",
-			response:     endpoint.HTTPGetTTLResponse{Status: 200, Key: "hello", TTL: intPtr(100)},
+			response:     endpoint.HTTPGetTTLResponse{Status: 200, Key: "hello", TTL: intPtr(100), Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -316,6 +335,208 @@ func TestCommand_getTTL(t *testing.T) {
 			} else {
 				testHelper(t, tt, url, args)
 			}
+		})
+	}
+}
+
+func TestCommand_pubSub(t *testing.T) {
+	type subscriber struct {
+		channel  string
+		expected []string
+		expire   string
+	}
+
+	type publisher struct {
+		channel string
+		message string
+		wait    time.Duration
+	}
+
+	tests := []struct {
+		t           testCase
+		subscribers []subscriber
+		publishers  []publisher
+		wait        time.Duration
+	}{
+		{
+			t: testCase{
+				name: "One subscriber",
+			},
+			subscribers: []subscriber{
+				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
+			},
+			publishers: []publisher{
+				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
+			},
+			wait: 100 * time.Millisecond,
+		},
+		{
+			t: testCase{
+				name: "Multiple subscribers",
+			},
+			subscribers: []subscriber{
+				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
+				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
+				{channel: "dogs", expected: []string{"message1", "message2", "message3", "message4"}, expire: "1"},
+			},
+			publishers: []publisher{
+				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
+				{channel: "dogs", message: "message1", wait: 10 * time.Millisecond},
+				{channel: "dogs", message: "message2", wait: 20 * time.Millisecond},
+				{channel: "dogs", message: "message3", wait: 30 * time.Millisecond},
+				{channel: "dogs", message: "message4", wait: 40 * time.Millisecond},
+			},
+			wait: 100 * time.Millisecond,
+		},
+	}
+
+	type publishRequest struct {
+		Message string `json:"message" validate:"required"`
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.t.name, func(t *testing.T) {
+			channels := map[string][]chan string{
+				"test": make([]chan string, 2),
+				"dogs": make([]chan string, 1),
+			}
+			var mu sync.RWMutex
+			m := mux.NewRouter()
+			m.HandleFunc("/v1/subscribe/{channel}", func(w http.ResponseWriter, r *http.Request) {
+				vars := mux.Vars(r)
+				channel := vars["channel"]
+
+				// Check if SSE is valid for the writer
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					t.Fatalf("Streaming unsupported")
+				}
+
+				// SSE headers
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("Connection", "keep-alive")
+
+				c := make(chan string, 10)
+
+				// Run a go func to remove the subscriber from the channel when they disconnect
+				ctx := r.Context()
+				go func() {
+					<-ctx.Done()
+					mu.Lock()
+					for i, ch := range channels[channel] {
+						if ch == c {
+							channels[channel] = append(channels[channel][:i], channels[channel][i+1:]...)
+							break
+						}
+					}
+					close(c)
+					mu.Unlock()
+				}()
+
+				mu.Lock()
+				channels[channel] = append(channels[channel], c)
+				mu.Unlock()
+
+				for message := range c {
+					_, err := fmt.Fprintf(w, "data: %s\n\n", message)
+					if err != nil {
+						t.Error(err)
+					}
+					flusher.Flush()
+				}
+			}).Methods("GET")
+			m.HandleFunc("/v1/publish/{channel}", func(w http.ResponseWriter, r *http.Request) {
+				vars := mux.Vars(r)
+				channel := vars["channel"]
+
+				var pData publishRequest
+				if err := json.NewDecoder(r.Body).Decode(&pData); err != nil {
+					http.Error(w, "Publish request has bad body", http.StatusBadRequest)
+				}
+
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte(`{"error":"null"}"`))
+				if err != nil {
+					return
+				}
+
+				mu.RLock()
+				for _, c := range channels[channel] {
+					select {
+					case c <- pData.Message:
+					default:
+						// Drop message if the channel is full
+					}
+				}
+				mu.RUnlock()
+
+			}).Methods("POST")
+			ts := httptest.NewServer(m)
+			defer ts.Close()
+
+			// Start each subscriber
+			var wg sync.WaitGroup
+			for i, s := range tt.subscribers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					t.Logf("Subscriber %v subscribing to channel %v", i, s.channel)
+
+					args := []string{"endpoint", "subscribe", "-c", s.channel, "-t", s.expire, "-u", ts.URL}
+					output, err := execute(t, newRootCmd(), args...)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+
+					// Get each message
+					messageCount := 0
+					scanner := bufio.NewScanner(strings.NewReader(output))
+					for scanner.Scan() {
+						line := scanner.Text()
+						t.Logf("Subscriber %v has received line %v", i, line)
+
+						// Only check valid SSE output
+						if strings.HasPrefix(line, "data: ") {
+							if messageCount > len(s.expected) {
+								t.Errorf("Too many messages received got %v expected %v", messageCount, len(s.expected))
+								break
+							}
+							msg := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+							if msg != s.expected[messageCount] {
+								t.Errorf("For message %v expected %v but got %v", messageCount, s.expected[messageCount], msg)
+								break
+							}
+							messageCount++
+						}
+					}
+					if messageCount != len(s.expected) {
+						t.Errorf("Incorrect message count got %v expected %v", messageCount, len(s.expected))
+					}
+					if err = scanner.Err(); err != nil {
+						t.Error(err)
+					}
+				}()
+			}
+
+			// Start each publisher
+			for _, p := range tt.publishers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					args := []string{"endpoint", "publish", "-c", p.channel, "-m", p.message, "-u", ts.URL}
+					<-time.After(p.wait)
+					_, err := execute(t, newRootCmd(), args...)
+					if err != nil {
+						t.Errorf("Error executing publish: %v", err)
+					}
+				}()
+			}
+
+			wg.Wait()
 		})
 	}
 }

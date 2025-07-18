@@ -317,6 +317,7 @@ func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
+			// Unmarshal request body
 			if err = json.Unmarshal(bodyBytes, &rData); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

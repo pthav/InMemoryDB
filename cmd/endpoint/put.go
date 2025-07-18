@@ -22,13 +22,13 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 			}
 
 			// Send request
+			var response StatusPlusErrorResponse
 			url := fmt.Sprintf("%v/v1/keys/%v", o.rootURL, o.key)
-			_, status, err := getResponse("PUT", url, requestBody)
+			status, err := getResponse("PUT", url, requestBody, &response)
 			if err != nil {
 				return err
 			}
-
-			response := StatusPlusErrorResponse{Status: status}
+			response.Status = status
 
 			return outputResponse(cmd, response)
 		},

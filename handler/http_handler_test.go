@@ -575,12 +575,7 @@ func TestWrapper_pubSub(t *testing.T) {
 						t.Error(err)
 					}
 
-					defer func(Body io.ReadCloser) {
-						err := Body.Close()
-						if err != nil {
-							t.Errorf("Failed to close response body: %v", err)
-						}
-					}(resp.Body)
+					defer resp.Body.Close()
 					reader := bufio.NewReader(resp.Body)
 
 					// Get each message

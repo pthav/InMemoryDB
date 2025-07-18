@@ -14,13 +14,13 @@ func newDeleteCmd(o *Options) *cobra.Command {
 to the console. delete -k=hello -u='localhost:8080'' will send a delete request for the key 'hello' to a server on port 8080.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Send request
+			var response StatusPlusErrorResponse
 			url := fmt.Sprintf("%v/v1/keys/%v", o.rootURL, o.key)
-			_, status, err := getResponse("DELETE", url, nil)
+			status, err := getResponse("DELETE", url, nil, &response)
 			if err != nil {
 				return err
 			}
-
-			response := StatusPlusErrorResponse{Status: status}
+			response.Status = status
 
 			return outputResponse(cmd, response)
 		},
