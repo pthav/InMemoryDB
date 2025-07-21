@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -582,9 +583,11 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 
 			timeAfterCreation := time.Now().Unix()
 
+			i.mu.RLock()
 			if len(i.database) == 0 {
 				t.Errorf("Store is empty")
 			}
+			i.mu.RUnlock()
 
 			// Check all deletions occur
 			for c := range tt.check {
@@ -670,9 +673,11 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fp := filepath.Join(t.TempDir(), "persist.json") // For persistence
+
 			heap.Init(tt.expectedTTL)
 
-			i, err := NewInMemoryDatabase(WithPersistence(), WithPersistencePeriod(1*time.Second), WithPersistenceOutput("persist.json"))
+			i, err := NewInMemoryDatabase(WithPersistence(), WithPersistencePeriod(1*time.Second), WithPersistenceOutput(fp))
 			if err != nil {
 				t.Error(err)
 			}
@@ -680,7 +685,7 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 
 			<-time.After(waitTime)
 
-			data, err := os.ReadFile("persist.json")
+			data, err := os.ReadFile(fp)
 			if err != nil {
 				t.Errorf("Failed to read persist.json")
 			}

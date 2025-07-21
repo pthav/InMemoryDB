@@ -21,7 +21,7 @@ type dbStore map[string]databaseEntry
 type InMemoryDatabase struct {
 	database dbStore       // Store the database key, value pairs
 	ttl      *ttlHeap      // Store TTLs on a heap
-	mu       sync.Mutex    // Mutex for coordinating ttlHeap cleaner and other operations
+	mu       sync.RWMutex  // Mutex for coordinating ttlHeap cleaner and other operations
 	newItem  chan struct{} // This channel tells the cleaner routine when a ttl has been created/updated
 	s        settings      // Database settings
 }
@@ -31,7 +31,7 @@ func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
 	db = &InMemoryDatabase{
 		database: dbStore{},
 		ttl:      &ttlHeap{},
-		mu:       sync.Mutex{},
+		mu:       sync.RWMutex{},
 		newItem:  make(chan struct{}),
 		s: settings{
 			shouldPersist:     false,
@@ -107,6 +107,9 @@ func (i *InMemoryDatabase) Create(data struct {
 
 // Get a value from the database by key if it exists and is valid
 func (i *InMemoryDatabase) Get(key string) (string, bool) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
 	dbEntry, loaded := i.load(key)
 	if (loaded && dbEntry.ttl == nil) || (loaded && *dbEntry.ttl > time.Now().Unix()) {
 		return dbEntry.value, true
@@ -116,6 +119,9 @@ func (i *InMemoryDatabase) Get(key string) (string, bool) {
 
 // GetTTL the remaining TTL for a given key
 func (i *InMemoryDatabase) GetTTL(key string) (*int64, bool) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
 	dbEntry, loaded := i.load(key)
 	if !loaded {
 		return nil, false
@@ -213,6 +219,7 @@ func (i *InMemoryDatabase) persist() {
 	for {
 		<-time.After(i.s.persistencePeriod)
 
+		// Make sure the file is open
 		i.mu.Lock()
 
 		file, err := os.Create(i.s.persistFile)

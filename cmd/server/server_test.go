@@ -50,7 +50,6 @@ func TestCommand_serve(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			// go run main.go server serve -p 7070 -c 6 --persist --persist-file persist.json --startup-file startup.json
 			// Execute command
 			args := []string{"serve",
 				"--startup-file", tt.startupFile,
