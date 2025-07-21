@@ -1,17 +1,16 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
-	"io"
 	"log/slog"
 	"net/http"
 	"sync"
 )
 
+// database defines the contract that an injected database implementation must follow
 type database interface {
 	Create(data struct {
 		Value string `json:"value"`
@@ -52,13 +51,13 @@ type putRequest struct {
 	Ttl   *int64 `json:"ttl"`
 }
 
+type publishRequest struct {
+	Message string `json:"message" validate:"required"`
+}
+
 type pubSubBroker struct {
 	mu       sync.RWMutex
 	channels map[string][]chan string
-}
-
-type publishRequest struct {
-	Message string `json:"message" validate:"required"`
 }
 
 type Wrapper struct {
@@ -303,39 +302,4 @@ func (h *Wrapper) publishHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// loggingMiddleware logs all incoming requests
-func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get body data
-		if r.Body != nil && r.ContentLength != 0 {
-			var rData map[string]any
-			bodyBytes, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			// Unmarshal request body
-			if err = json.Unmarshal(bodyBytes, &rData); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			} else {
-				// Get body data to request
-				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-				h.logger.Info(
-					"incoming request",
-					"method", r.Method,
-					"URI", r.RequestURI,
-					"Body", rData)
-			}
-		} else {
-			h.logger.Info(
-				"incoming request",
-				"method", r.Method,
-				"URI", r.RequestURI)
-		}
-		next.ServeHTTP(w, r)
-	})
 }
