@@ -37,7 +37,7 @@ type getResponse struct {
 
 type getTTLResponse struct {
 	Key string `json:"key"`
-	TTL *int64 `json:"ttl"`
+	TTL int64  `json:"ttl"`
 }
 
 type postRequest struct {
@@ -217,7 +217,10 @@ func (h *Wrapper) getTTLHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 	ttl, loaded := h.db.GetTTL(key)
-	response := getTTLResponse{Key: key, TTL: ttl}
+	response := getTTLResponse{Key: key}
+	if loaded && ttl != nil {
+		response.TTL = *ttl
+	}
 	w.Header().Set("Content-Type", "application/json")
 
 	if !loaded {

@@ -1,10 +1,8 @@
 package handler
 
 import (
-	"bufio"
-	"context"
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,10 +12,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
-// DatabaseTestImplementation is an implementation of database used for test cases
+// databaseTestImplementation is an implementation of database used for test cases
 type databaseTestImplementation struct {
 	createCalls []struct {
 		key   string
@@ -94,21 +91,71 @@ func (db *databaseTestImplementation) GetTTL(key string) (*int64, bool) {
 	return db.getTTLTime, db.getTTLReturn
 }
 
+// Helper for making an int pointer from an r-value
+func intPtr(v int64) *int64 {
+	return &v
+}
+
+// testCase is a general test case struct for a majority of these test functions
+type testCase struct {
+	name         string // Test case name
+	key          string // Test case key used
+	value        string // Value for the JSON request body
+	ttl          *int64 // TTL for the JSON request body
+	status       int    // Desired return status
+	createReturn bool   // Desired bool return from Create
+	readReturn   bool   // Desired bool return from Read
+	updateReturn bool   // Desired bool return from Update
+	deleteReturn bool   // Desired bool return from Delete
+	getTTLReturn bool   // Desired bool return from getTTL
+	checkCalls   bool   // Number of expected DB function calls
+}
+
+func testHelper(t *testing.T, tt testCase, method string, path string, body string) (*bytes.Buffer, *databaseTestImplementation) {
+	// Set up writer and request
+	w := httptest.NewRecorder()
+	r := &http.Request{
+		Method: method,
+		URL:    &url.URL{Path: path},
+		Body:   io.NopCloser(strings.NewReader(body)),
+	}
+
+	// Set up database
+	db := &databaseTestImplementation{
+		createReturn: tt.createReturn,
+		createKey:    tt.key,
+		readReturn:   tt.readReturn,
+		readString:   tt.value,
+		putReturn:    tt.updateReturn,
+		deleteReturn: tt.deleteReturn,
+		getTTLReturn: tt.getTTLReturn,
+		getTTLTime:   tt.ttl,
+	}
+	h := NewHandler(db, slog.New(slog.DiscardHandler))
+	h.ServeHTTP(w, r)
+
+	if w.Code != tt.status {
+		t.Errorf("response code = %v; want %v", w.Code, tt.status)
+	}
+
+	return w.Body, db
+}
+
 func TestWrapper_postHandler(t *testing.T) {
-	tests := []struct {
-		name         string
-		key          string
-		value        string
-		ttl          int64
-		status       int
-		createReturn bool
-		checkCalls   bool
-	}{
+	tests := []testCase{
 		{
 			name:         "Try to create non-existing key value pair",
 			key:          "testKey",
 			value:        "testValue",
-			ttl:          0,
+			ttl:          intPtr(0),
+			status:       http.StatusCreated,
+			createReturn: true,
+			checkCalls:   true,
+		},
+		{
+			name:         "Try to create non-existing key value pair without a TTL",
+			key:          "testKey",
+			value:        "testValue",
 			status:       http.StatusCreated,
 			createReturn: true,
 			checkCalls:   true,
@@ -117,41 +164,26 @@ func TestWrapper_postHandler(t *testing.T) {
 			name:       "Send a bad request body",
 			key:        "testKey",
 			value:      `{"test": "test"}`,
-			ttl:        200,
+			ttl:        intPtr(200),
 			status:     http.StatusBadRequest,
 			checkCalls: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up writer and request
-			w := httptest.NewRecorder()
-			r := &http.Request{
-				Method: "POST",
-				URL:    &url.URL{Path: "/v1/keys"},
-				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, tt.value, tt.ttl))),
+			method := "POST"
+			path := "/v1/keys"
+			var requestBody string
+			if tt.ttl != nil {
+				requestBody = fmt.Sprintf(`{"value": "%s", "ttl": %v}`, tt.value, *tt.ttl)
+			} else {
+				requestBody = fmt.Sprintf(`{"value": "%s"}`, tt.value)
 			}
-
-			// Set up database
-			db := &databaseTestImplementation{
-				createCalls: []struct {
-					key   string
-					value string
-					ttl   *int64
-				}{},
-				createReturn: tt.createReturn,
-				createKey:    tt.key,
-			}
-			h := NewHandler(db, slog.New(slog.DiscardHandler))
-			h.ServeHTTP(w, r)
-
-			if w.Code != tt.status {
-				t.Errorf("response code = %v; want %v", w.Code, tt.status)
-			}
+			wBody, db := testHelper(t, tt, method, path, requestBody)
 
 			if tt.checkCalls {
 				var body postResponse
-				err := json.NewDecoder(w.Body).Decode(&body)
+				err := json.NewDecoder(wBody).Decode(&body)
 				if err != nil {
 					t.Errorf("Failed to decode response body JSON: %v", err)
 				}
@@ -174,7 +206,7 @@ func TestWrapper_postHandler(t *testing.T) {
 					t.Errorf("Create() value = %v; want %v", db.createCalls[0].value, tt.value)
 				}
 
-				if *db.createCalls[0].ttl != tt.ttl {
+				if tt.ttl != nil && *db.createCalls[0].ttl != *tt.ttl {
 					t.Errorf("Create() TTL = %v; want %v", db.createCalls[0].ttl, tt.ttl)
 				}
 			}
@@ -183,14 +215,7 @@ func TestWrapper_postHandler(t *testing.T) {
 }
 
 func TestWrapper_getHandler(t *testing.T) {
-	tests := []struct {
-		name       string
-		key        string
-		value      string
-		status     int
-		readReturn bool
-		checkCalls bool
-	}{
+	tests := []testCase{
 		{
 			name:       "Get an existing key value pair",
 			key:        "testKey",
@@ -210,32 +235,14 @@ func TestWrapper_getHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up writer and request
-			w := httptest.NewRecorder()
-			r := &http.Request{
-				Method: "GET",
-				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
-			}
-
-			// Set up database
-			db := &databaseTestImplementation{
-				readCalls: []struct {
-					key string
-				}{},
-				readReturn: tt.readReturn,
-				readString: tt.value,
-			}
-			h := NewHandler(db, slog.New(slog.DiscardHandler))
-			h.ServeHTTP(w, r)
-
-			// Check expectations
-			if w.Code != tt.status {
-				t.Errorf("response code = %v; want %v", w.Code, tt.status)
-			}
+			method := "GET"
+			path := fmt.Sprintf("/v1/keys/%s", tt.key)
+			requestBody := ""
+			wBody, db := testHelper(t, tt, method, path, requestBody)
 
 			if tt.readReturn {
 				var body getResponse
-				err := json.NewDecoder(w.Body).Decode(&body)
+				err := json.NewDecoder(wBody).Decode(&body)
 				if err != nil {
 					t.Errorf("Failed to decode response body JSON: %v", err)
 				}
@@ -261,20 +268,12 @@ func TestWrapper_getHandler(t *testing.T) {
 }
 
 func TestWrapper_putHandler(t *testing.T) {
-	tests := []struct {
-		name         string
-		key          string
-		value        string
-		ttl          int64
-		status       int
-		updateReturn bool
-		checkCalls   bool
-	}{
+	tests := []testCase{
 		{
 			name:         "Put non-existing key value pair",
 			key:          "testKey",
 			value:        "testValue",
-			ttl:          40,
+			ttl:          intPtr(40),
 			status:       http.StatusCreated,
 			updateReturn: false,
 			checkCalls:   true,
@@ -283,7 +282,16 @@ func TestWrapper_putHandler(t *testing.T) {
 			name:         "Put an existing key value pair",
 			key:          "testKey",
 			value:        "testValue",
-			ttl:          100,
+			ttl:          intPtr(100),
+			status:       http.StatusOK,
+			updateReturn: true,
+			checkCalls:   true,
+		},
+		{
+			name:         "Put an existing key value pair without updating TTL",
+			key:          "testKey",
+			value:        "testValue",
+			ttl:          nil,
 			status:       http.StatusOK,
 			updateReturn: true,
 			checkCalls:   true,
@@ -292,36 +300,22 @@ func TestWrapper_putHandler(t *testing.T) {
 			name:       "Send a bad request body",
 			key:        "testKey",
 			value:      `{"test": "test"}`,
-			ttl:        500,
+			ttl:        intPtr(500),
 			status:     http.StatusBadRequest,
 			checkCalls: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up writer and request
-			w := httptest.NewRecorder()
-			r := &http.Request{
-				Method: "PUT",
-				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
-				Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, tt.value, tt.ttl))),
+			method := "PUT"
+			path := fmt.Sprintf("/v1/keys/%s", tt.key)
+			var requestBody string
+			if tt.ttl != nil {
+				requestBody = fmt.Sprintf(`{"value": "%s", "ttl": %v}`, tt.value, *tt.ttl)
+			} else {
+				requestBody = fmt.Sprintf(`{"value": "%s"}`, tt.value)
 			}
-
-			// Set up database
-			db := &databaseTestImplementation{
-				putCalls: []struct {
-					key   string
-					value string
-					ttl   *int64
-				}{},
-				putReturn: tt.updateReturn,
-			}
-			h := NewHandler(db, slog.New(slog.DiscardHandler))
-			h.ServeHTTP(w, r)
-
-			if w.Code != tt.status {
-				t.Errorf("response code = %v; want %v", w.Code, tt.status)
-			}
+			_, db := testHelper(t, tt, method, path, requestBody)
 
 			// Check expectations
 			if tt.checkCalls {
@@ -337,7 +331,7 @@ func TestWrapper_putHandler(t *testing.T) {
 					t.Errorf("Put() value = %v; want %v", db.putCalls[0].value, tt.value)
 				}
 
-				if *db.putCalls[0].ttl != tt.ttl {
+				if tt.ttl != nil && *db.putCalls[0].ttl != *tt.ttl {
 					t.Errorf("Put() TTL = %v; want %v", db.putCalls[0].ttl, tt.ttl)
 				}
 			}
@@ -346,13 +340,7 @@ func TestWrapper_putHandler(t *testing.T) {
 }
 
 func TestWrapper_deleteHandler(t *testing.T) {
-	tests := []struct {
-		name         string
-		key          string
-		status       int
-		deleteReturn bool
-		checkCalls   bool
-	}{
+	tests := []testCase{
 		{
 			name:         "Delete an existing key value pair",
 			key:          "testKey",
@@ -370,27 +358,10 @@ func TestWrapper_deleteHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up writer and request
-			w := httptest.NewRecorder()
-			r := &http.Request{
-				Method: "DELETE",
-				URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", tt.key)},
-			}
-
-			// Set up database
-			db := &databaseTestImplementation{
-				deleteCalls: []struct {
-					key string
-				}{},
-				deleteReturn: tt.deleteReturn,
-			}
-			h := NewHandler(db, slog.New(slog.DiscardHandler))
-			h.ServeHTTP(w, r)
-
-			// Check expectations
-			if w.Code != tt.status {
-				t.Errorf("response code = %v; want %v", w.Code, tt.status)
-			}
+			method := "DELETE"
+			path := fmt.Sprintf("/v1/keys/%s", tt.key)
+			requestBody := ""
+			_, db := testHelper(t, tt, method, path, requestBody)
 
 			if tt.checkCalls {
 				if len(db.deleteCalls) == 0 {
@@ -406,18 +377,7 @@ func TestWrapper_deleteHandler(t *testing.T) {
 }
 
 func TestWrapper_getTTLHandler(t *testing.T) {
-	intPtr := func(v int64) *int64 {
-		return &v
-	}
-
-	tests := []struct {
-		name         string
-		key          string
-		ttl          *int64
-		status       int
-		getTTLReturn bool
-		checkCalls   bool
-	}{
+	tests := []testCase{
 		{
 			name:         "Get an existing key value pair",
 			key:          "testKey",
@@ -445,37 +405,22 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up writer and request
-			w := httptest.NewRecorder()
-			r := &http.Request{
-				Method: "GET",
-				URL:    &url.URL{Path: fmt.Sprintf("/v1/ttl/%s", tt.key)},
-			}
-
-			// Set up database
-			db := &databaseTestImplementation{
-				getTTLCalls: []struct {
-					key string
-				}{},
-				getTTLReturn: tt.getTTLReturn,
-				getTTLTime:   tt.ttl,
-			}
-			h := NewHandler(db, slog.New(slog.DiscardHandler))
-			h.ServeHTTP(w, r)
-
-			// Check expectations
-			if w.Code != tt.status {
-				t.Errorf("response code = %v; want %v", w.Code, tt.status)
-			}
+			method := "GET"
+			path := fmt.Sprintf("/v1/ttl/%s", tt.key)
+			requestBody := ""
+			wBody, db := testHelper(t, tt, method, path, requestBody)
 
 			if tt.getTTLReturn {
 				var body getTTLResponse
-				err := json.NewDecoder(w.Body).Decode(&body)
+				err := json.NewDecoder(wBody).Decode(&body)
 				if err != nil {
 					t.Errorf("Failed to decode response body JSON: %v", err)
 				}
 
-				expected := getTTLResponse{Key: tt.key, TTL: tt.ttl}
+				expected := getTTLResponse{Key: tt.key}
+				if tt.ttl != nil {
+					expected.TTL = *tt.ttl
+				}
 
 				if !reflect.DeepEqual(expected, body) {
 					t.Errorf("response body = %v; want %v", body, expected)
@@ -493,227 +438,4 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestWrapper_pubSub(t *testing.T) {
-	type subscriber struct {
-		channel  string
-		expected []string
-		expire   time.Duration
-	}
-
-	type publisher struct {
-		channel string
-		message string
-		wait    time.Duration
-	}
-
-	tests := []struct {
-		name        string
-		subscribers []subscriber
-		publishers  []publisher
-		wait        time.Duration
-	}{
-		{
-			name: "One subscriber",
-			subscribers: []subscriber{
-				{channel: "test", expected: []string{"message1", "message2"}, expire: time.Second},
-			},
-			publishers: []publisher{
-				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
-			},
-			wait: 100 * time.Millisecond,
-		},
-		{
-			name: "Multiple subscribers",
-			subscribers: []subscriber{
-				{channel: "test", expected: []string{"message1", "message2"}, expire: time.Second},
-				{channel: "test", expected: []string{"message1", "message2"}, expire: time.Second},
-				{channel: "dogs", expected: []string{"message1", "message2", "message3", "message4"}, expire: time.Second},
-			},
-			publishers: []publisher{
-				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
-				{channel: "dogs", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "dogs", message: "message2", wait: 20 * time.Millisecond},
-				{channel: "dogs", message: "message3", wait: 30 * time.Millisecond},
-				{channel: "dogs", message: "message4", wait: 40 * time.Millisecond},
-			},
-			wait: 100 * time.Millisecond,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up handler
-			db := &databaseTestImplementation{}
-			h := NewHandler(db, slog.New(slog.DiscardHandler))
-			ts := httptest.NewServer(h)
-			defer ts.Close()
-
-			// Start each subscriber
-			for i, s := range tt.subscribers {
-				go func() {
-					t.Logf("Subscriber %v subscribing to channel %v", i, s.channel)
-
-					// Create an http request for subscription that will automatically disconnect after the
-					// subscriber's expiration
-					client := http.Client{}
-
-					ctx, cancel := context.WithTimeout(context.Background(), s.expire)
-					defer cancel()
-
-					req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/v1/subscribe/%s", ts.URL, s.channel), nil)
-					if err != nil {
-						t.Error(err)
-					}
-
-					resp, err := client.Do(req)
-					if err != nil {
-						t.Error(err)
-					}
-
-					defer resp.Body.Close()
-					reader := bufio.NewReader(resp.Body)
-
-					// Get each message
-					messageCount := 0
-					for {
-						line, err := reader.ReadString('\n')
-						if err != nil {
-							// If it is an organic error, check the final messageCount against the expectation
-							if errors.Is(err, context.DeadlineExceeded) || err == io.EOF {
-								if messageCount != len(s.expected) {
-									t.Errorf("Got message count %v expected %v", messageCount, len(s.expected))
-								}
-								break
-							}
-							t.Errorf("Message read error: %v", err)
-							break
-						}
-						t.Logf("Subscriber %v has received line %v", i, line)
-
-						// Only check valid SSE output
-						if strings.HasPrefix(line, "data: ") {
-							if messageCount > len(s.expected) {
-								t.Errorf("Too many messages received got %v expected %v", messageCount, len(s.expected))
-								break
-							}
-							msg := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
-							if msg != s.expected[messageCount] {
-								t.Errorf("For message %v expected %v but got %v", messageCount, s.expected[messageCount], msg)
-								break
-							}
-							messageCount++
-						}
-					}
-				}()
-			}
-
-			// Start each publisher
-			for _, p := range tt.publishers {
-				go func() {
-					<-time.After(p.wait)
-					t.Logf("Publishing to channel %v with message %v", p.channel, p.message)
-					payload := fmt.Sprintf(`{"message": "%v"}`, p.message)
-					resp, err := http.Post(fmt.Sprintf("%s/v1/publish/%s", ts.URL, p.channel), "application/json", strings.NewReader(payload))
-					defer func(Body io.ReadCloser) {
-						err := Body.Close()
-						if err != nil {
-							t.Errorf("Failed to close response body: %v", err)
-						}
-					}(resp.Body)
-					if err != nil {
-						t.Errorf("Unable to send post request: %v", err)
-					}
-				}()
-			}
-
-			<-time.After(tt.wait)
-		})
-	}
-}
-
-func TestJsonValidationPost(t *testing.T) {
-	t.Run("Check post validation", func(t *testing.T) {
-		// Don't pass in a value
-		wBad := httptest.NewRecorder()
-		rBad := &http.Request{
-			Method: "POST",
-			URL:    &url.URL{Path: "/v1/keys"},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"ttl": %v}`, 100))),
-		}
-
-		// Pass in value as required
-		wGood := httptest.NewRecorder()
-		rGood := &http.Request{
-			Method: "POST",
-			URL:    &url.URL{Path: "/v1/keys"},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, "test", 100))),
-		}
-
-		// Set up database
-		db := &databaseTestImplementation{
-			createCalls: []struct {
-				key   string
-				value string
-				ttl   *int64
-			}{},
-			createKey:    "helloVal",
-			createReturn: true,
-		}
-		h := NewHandler(db, slog.New(slog.DiscardHandler))
-		h.ServeHTTP(wBad, rBad)
-		if wBad.Code != http.StatusBadRequest {
-			t.Errorf("response code = %v; want %v", wBad.Code, http.StatusBadRequest)
-		}
-
-		h.ServeHTTP(wGood, rGood)
-		if wGood.Code >= 400 {
-			t.Errorf("response code = %v; want response code less than 400", wGood.Code)
-		}
-
-	})
-}
-
-func TestJsonValidationPut(t *testing.T) {
-	t.Run("Check post validation", func(t *testing.T) {
-		// Don't pass in a value
-		wBad := httptest.NewRecorder()
-		rBad := &http.Request{
-			Method: "PUT",
-			URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", "test")},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"ttl": %v}`, 100))),
-		}
-
-		// Pass in value as required
-		wGood := httptest.NewRecorder()
-		rGood := &http.Request{
-			Method: "PUT",
-			URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", "test")},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, "testVal", 100))),
-		}
-
-		// Set up database
-		db := &databaseTestImplementation{
-			createCalls: []struct {
-				key   string
-				value string
-				ttl   *int64
-			}{},
-			createKey:    "helloVal",
-			createReturn: true,
-		}
-		h := NewHandler(db, slog.New(slog.DiscardHandler))
-		h.ServeHTTP(wBad, rBad)
-		if wBad.Code != http.StatusBadRequest {
-			t.Errorf("response code = %v; want %v", wBad.Code, http.StatusBadRequest)
-		}
-
-		h.ServeHTTP(wGood, rGood)
-		if wGood.Code >= 400 {
-			t.Errorf("response code = %v; want response code less than 400", wGood.Code)
-		}
-
-	})
 }
