@@ -35,7 +35,7 @@ will subscribe to channel 'hello' for up to 30 seconds.`,
 
 			resp, err := client.Do(req)
 			if err != nil {
-				return errors.New(fmt.Sprintf("Reading response from server: %v", err))
+				return errors.New(fmt.Sprintf("error sending request to server: %v", err))
 			}
 			defer resp.Body.Close()
 

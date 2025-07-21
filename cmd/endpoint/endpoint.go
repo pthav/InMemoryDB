@@ -59,7 +59,7 @@ func getResponse(method string, url string, requestBody any, response any) (int,
 // Generic HTTP method response
 
 type StatusPlusErrorResponse struct {
-	Status int    `json:"status"`
+	Status int    `json:"status"` // This isn't output as JSON from the external API it is added after.
 	Error  string `json:"error"`
 }
 
