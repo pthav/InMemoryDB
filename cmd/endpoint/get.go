@@ -13,7 +13,7 @@ type HTTPGetResponse struct {
 }
 
 func newGetCmd(o *Options) *cobra.Command {
-	// getCmd represents the get command
+	// getCmd gets a key value pair from the database
 	var getCmd = &cobra.Command{
 		Use:   "get",
 		Short: "Get a key value pair.",

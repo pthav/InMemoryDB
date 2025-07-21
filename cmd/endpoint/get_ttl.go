@@ -13,7 +13,7 @@ type HTTPGetTTLResponse struct {
 }
 
 func newGetTTLCmd(o *Options) *cobra.Command {
-	// getTTLCmd represents the getTtl command
+	// getTTLCmd gets a key and its TTL from the database
 	var getTTLCmd = &cobra.Command{
 		Use:   "getTTL",
 		Short: "Get the remaining TTL for a key",

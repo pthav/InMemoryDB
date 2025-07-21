@@ -12,7 +12,7 @@ type HTTPPostResponse struct {
 }
 
 func newPostCmd(o *Options) *cobra.Command {
-	// postCmd represents the post command
+	// postCmd posts a value to the database
 	var postCmd = &cobra.Command{
 		Use:   "post",
 		Short: "Post a value to the database",

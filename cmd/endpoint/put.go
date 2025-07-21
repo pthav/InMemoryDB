@@ -6,7 +6,7 @@ import (
 )
 
 func newPutCmd(o *Options) *cobra.Command {
-	// putCmd represents the put command
+	// putCmd puts a key value pair to the database
 	var putCmd = &cobra.Command{
 		Use:   "put",
 		Short: "Put a key value pair into the database",

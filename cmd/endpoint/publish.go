@@ -6,7 +6,7 @@ import (
 )
 
 func newPublishCmd(o *Options) *cobra.Command {
-	// publishCmd represents the publish command
+	// publishCmd publishes a message to a channel in the database
 	var publishCmd = &cobra.Command{
 		Use:   "publish",
 		Short: "Publish a message to a channel",

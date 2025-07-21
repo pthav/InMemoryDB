@@ -9,6 +9,7 @@ import (
 
 // settings define user-configurable settings for the database in a single struct
 type settings struct {
+	startupFile       string        // The startup file
 	shouldPersist     bool          // Whether there should be persistence or not
 	persistFile       string        // The file name for which to output persistence to
 	persistencePeriod time.Duration // How long in between database persistence cycles
@@ -52,6 +53,7 @@ func WithLogger(l *slog.Logger) Options {
 // WithInitialData allows the provision of a .json file to initialize the database with
 func WithInitialData(filename string) Options {
 	return func(db *InMemoryDatabase) error {
+		db.s.startupFile = filename
 		data, err := os.ReadFile(filename)
 		if err != nil {
 			return err

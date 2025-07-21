@@ -14,7 +14,7 @@ import (
 )
 
 func newSubscribeCmd(o *Options) *cobra.Command {
-	// subscribeCmd represents the subscribe command
+	// subscribeCmd subscribes to a channel in the database
 	var subscribeCmd = &cobra.Command{
 		Use:   "subscribe",
 		Short: "Subscribe to a channel",

@@ -231,3 +231,34 @@ func TestCommand_pubSub(t *testing.T) {
 		})
 	}
 }
+
+func TestCommand_pubSubValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "Test subscribe errors without channel",
+			args: []string{"subscribe"},
+		},
+		{
+			name: "Test publish errors without channel",
+			args: []string{"publish", "-m", "message"},
+		},
+		{
+			name: "Test publish errors without message",
+			args: []string{"publish", "-c", "channel"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := execute(t, NewEndpointsCmd(), tt.args...)
+			if err == nil {
+				t.Error("Expected err but got nil")
+			} else if !strings.Contains(err.Error(), "required") {
+				t.Errorf("Expected error to contain %v, got %v", "required", err)
+			}
+		})
+	}
+}

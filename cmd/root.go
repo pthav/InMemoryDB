@@ -19,7 +19,7 @@ to send requests to the already served database.`,
 		Run: func(cmd *cobra.Command, args []string) {},
 	}
 	rootCmd.AddCommand(endpoint.NewEndpointsCmd())
-	rootCmd.AddCommand(server.ServerCmd)
+	rootCmd.AddCommand(server.NewServerCmd())
 
 	return rootCmd
 }

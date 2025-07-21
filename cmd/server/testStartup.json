@@ -1,0 +1,42 @@
+{
+  "dbStore": {
+    "77670885-cde4-4cb7-b2ca-13ea47b0b7e0": {
+      "value": "hello1",
+      "ttl": 2751785108
+    },
+    "f79f123a-3e26-423a-9aab-ff7744e4140f": {
+      "value": "hello2",
+      "ttl": 2751785118
+    },
+    "hello3": {
+      "value": "hello3",
+      "ttl": 2751785148
+    },
+    "hello4": {
+      "value": "hello4",
+      "ttl": 2751785138
+    }
+  },
+  "ttlHeap": [
+    {
+      "key": "77670885-cde4-4cb7-b2ca-13ea47b0b7e0",
+      "ttl": 2751785108
+    },
+    {
+      "key": "f79f123a-3e26-423a-9aab-ff7744e4140f",
+      "ttl": 2751785118
+    },
+    {
+      "key": "hello3",
+      "ttl": 2751785128
+    },
+    {
+      "key": "hello4",
+      "ttl": 2751785138
+    },
+    {
+      "key": "hello3",
+      "ttl": 2751785148
+    }
+  ]
+}

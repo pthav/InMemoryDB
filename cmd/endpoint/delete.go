@@ -6,7 +6,7 @@ import (
 )
 
 func newDeleteCmd(o *Options) *cobra.Command {
-	// deleteCmd represents the delete command
+	// deleteCmd will delete a key value pair from the database
 	var deleteCmd = &cobra.Command{
 		Use:   "delete",
 		Short: "Delete a key and its associated value.",

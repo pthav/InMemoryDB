@@ -57,6 +57,26 @@ func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
 	return
 }
 
+// GetSettings returns the database settings so that the settings struct does not have to be an exported type
+func (i *InMemoryDatabase) GetSettings() struct {
+	StartupFile       string
+	ShouldPersist     bool
+	PersistFile       string
+	PersistencePeriod time.Duration
+} {
+	return struct {
+		StartupFile       string
+		ShouldPersist     bool
+		PersistFile       string
+		PersistencePeriod time.Duration
+	}{
+		StartupFile:       i.s.startupFile,
+		ShouldPersist:     i.s.shouldPersist,
+		PersistFile:       i.s.persistFile,
+		PersistencePeriod: i.s.persistencePeriod,
+	}
+}
+
 // Create a key value pair in the database
 func (i *InMemoryDatabase) Create(data struct {
 	Value string `json:"value"`
