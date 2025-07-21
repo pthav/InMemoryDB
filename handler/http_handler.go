@@ -65,6 +65,7 @@ type Wrapper struct {
 	router *mux.Router
 	logger *slog.Logger
 	broker pubSubBroker
+	m      *metrics
 }
 
 // Helper function for writing JSON errors
@@ -98,6 +99,13 @@ func NewHandler(db database, logger *slog.Logger) *Wrapper {
 	handler.router.HandleFunc("/v1/publish/{channel}", handler.publishHandler).
 		Methods("POST")
 	handler.router.Use(handler.loggingMiddleware)
+
+	// Prometheus metrics setup
+	p, m := newPromHandler()
+	handler.m = m
+	handler.router.Handle("/metrics", p)
+	handler.router.Use(handler.prometheusMiddleware)
+
 	return handler
 }
 

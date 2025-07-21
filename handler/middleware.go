@@ -41,3 +41,10 @@ func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// prometheusMiddleware handles all prometheus metric updates.
+func (h *Wrapper) prometheusMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+	})
+}
