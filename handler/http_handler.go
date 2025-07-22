@@ -70,6 +70,11 @@ type Wrapper struct {
 
 // Helper function for writing JSON errors
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	sw, ok := w.(*statusResponseWriter)
+	if ok {
+		sw.e = msg
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	err := json.NewEncoder(w).Encode(map[string]string{
@@ -98,13 +103,14 @@ func NewHandler(db database, logger *slog.Logger) *Wrapper {
 		Methods("GET")
 	handler.router.HandleFunc("/v1/publish/{channel}", handler.publishHandler).
 		Methods("POST")
-	handler.router.Use(handler.loggingMiddleware)
 
 	// Prometheus metrics setup
 	p, m := newPromHandler()
 	handler.m = m
 	handler.router.Handle("/metrics", p)
+
 	handler.router.Use(handler.prometheusMiddleware)
+	handler.router.Use(handler.loggingMiddleware)
 
 	return handler
 }
@@ -183,7 +189,7 @@ func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 	rData.Key = vars["key"]
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Error occurred when parsing put request: %v", err))
 		return
 	}
 
@@ -191,7 +197,7 @@ func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 	validate := validator.New()
 	err = validate.Struct(rData)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Validation errors when parsing put request: %s", err), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Validation errors when parsing put request: %v", err))
 		return
 	}
 
@@ -206,6 +212,11 @@ func (h *Wrapper) putHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusCreated)
 	}
+
+	_, err = w.Write([]byte("{}"))
+	if err != nil {
+		return
+	}
 }
 
 // deleteHandler uses the request key to delete the key value pair from the database
@@ -217,6 +228,11 @@ func (h *Wrapper) deleteHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	} else {
 		w.WriteHeader(http.StatusNotFound)
+	}
+
+	_, err := w.Write([]byte("{}"))
+	if err != nil {
+		return
 	}
 }
 
@@ -252,7 +268,7 @@ func (h *Wrapper) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	// Check if SSE is valid for the writer
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Streaming unsupported")
 		return
 	}
 
@@ -285,7 +301,8 @@ func (h *Wrapper) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	for message := range c {
 		_, err := fmt.Fprintf(w, "data: %s\n\n", message)
 		if err != nil {
-			http.Error(w, "Error writing message to subscriber", http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Error writing message: %v", err))
+			return
 		}
 		flusher.Flush()
 	}
@@ -298,7 +315,8 @@ func (h *Wrapper) publishHandler(w http.ResponseWriter, r *http.Request) {
 
 	var pData publishRequest
 	if err := json.NewDecoder(r.Body).Decode(&pData); err != nil {
-		http.Error(w, "Publish request has bad body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Publish request has bad body: %v", err))
+		return
 	}
 
 	h.broker.mu.RLock()
@@ -312,5 +330,9 @@ func (h *Wrapper) publishHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	_, err := w.Write([]byte("{}"))
+	if err != nil {
+		return
+	}
 }

@@ -3,9 +3,30 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 )
+
+// Status wrapper so that the middleware can access information after calling next()
+type statusResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	e          string
+}
+
+// Flush is necessary here for the subscribe functionality to work
+func (w *statusResponseWriter) Flush() {
+	w.ResponseWriter.(http.Flusher).Flush()
+}
+
+// WriteHeader enables the collection of status codes
+func (w *statusResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
+}
 
 // loggingMiddleware logs all incoming requests
 func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
@@ -38,13 +59,69 @@ func (h *Wrapper) loggingMiddleware(next http.Handler) http.Handler {
 				"method", r.Method,
 				"URI", r.RequestURI)
 		}
-		next.ServeHTTP(w, r)
+
+		sw, ok := w.(*statusResponseWriter)
+		if !ok {
+			sw = &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		}
+		next.ServeHTTP(sw, r)
+
+		if sw.statusCode >= 400 {
+			h.logger.Error("request failed", "method", r.Method, "URI", r.RequestURI, "err", sw.e)
+		}
 	})
 }
 
 // prometheusMiddleware handles all prometheus metric updates.
 func (h *Wrapper) prometheusMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
+		sw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		// Subscription gauge
+		if strings.Contains(r.URL.Path, "subscribe") {
+			h.m.dbSubscriptions.Inc()
+		}
+
+		before := time.Now().UnixMilli()
+		next.ServeHTTP(sw, r)
+		after := time.Now().UnixMilli()
+
+		// Observe metrics
+
+		// Request counter
+		requestCounter, err := h.m.dbHttpRequestCounter.GetMetricWithLabelValues(
+			r.Method,
+			r.URL.Path,
+			fmt.Sprintf("%v", sw.statusCode),
+		)
+
+		if err == nil {
+			requestCounter.Inc()
+		} else {
+			h.logger.Error("prometheus metrics error", "err", err)
+		}
+
+		// Latency histogram
+		latency, err := h.m.dbLatency.GetMetricWithLabelValues(
+			r.Method,
+			r.URL.Path,
+			fmt.Sprintf("%v", sw.statusCode),
+		)
+
+		if err == nil {
+			latency.Observe(float64(after - before))
+		} else {
+			h.logger.Error("prometheus metrics error", "err", err)
+		}
+
+		// Published messages counter
+		if strings.Contains(r.URL.Path, "publish") && sw.statusCode < 300 {
+			h.m.dbPublishedMessages.Inc()
+		}
+
+		// Subscription gauge
+		if strings.Contains(r.URL.Path, "subscribe") {
+			h.m.dbSubscriptions.Dec()
+		}
 	})
 }

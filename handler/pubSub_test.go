@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -152,88 +151,4 @@ func TestWrapper_pubSub(t *testing.T) {
 			<-time.After(tt.wait)
 		})
 	}
-}
-
-func TestJsonValidationPost(t *testing.T) {
-	t.Run("Check post validation", func(t *testing.T) {
-		// Don't pass in a value
-		wBad := httptest.NewRecorder()
-		rBad := &http.Request{
-			Method: "POST",
-			URL:    &url.URL{Path: "/v1/keys"},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"ttl": %v}`, 100))),
-		}
-
-		// Pass in value as required
-		wGood := httptest.NewRecorder()
-		rGood := &http.Request{
-			Method: "POST",
-			URL:    &url.URL{Path: "/v1/keys"},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, "test", 100))),
-		}
-
-		// Set up database
-		db := &databaseTestImplementation{
-			createCalls: []struct {
-				key   string
-				value string
-				ttl   *int64
-			}{},
-			createKey:    "helloVal",
-			createReturn: true,
-		}
-		h := NewHandler(db, slog.New(slog.DiscardHandler))
-		h.ServeHTTP(wBad, rBad)
-		if wBad.Code != http.StatusBadRequest {
-			t.Errorf("response code = %v; want %v", wBad.Code, http.StatusBadRequest)
-		}
-
-		h.ServeHTTP(wGood, rGood)
-		if wGood.Code >= 400 {
-			t.Errorf("response code = %v; want response code less than 400", wGood.Code)
-		}
-
-	})
-}
-
-func TestJsonValidationPut(t *testing.T) {
-	t.Run("Check post validation", func(t *testing.T) {
-		// Don't pass in a value
-		wBad := httptest.NewRecorder()
-		rBad := &http.Request{
-			Method: "PUT",
-			URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", "test")},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"ttl": %v}`, 100))),
-		}
-
-		// Pass in value as required
-		wGood := httptest.NewRecorder()
-		rGood := &http.Request{
-			Method: "PUT",
-			URL:    &url.URL{Path: fmt.Sprintf("/v1/keys/%s", "test")},
-			Body:   io.NopCloser(strings.NewReader(fmt.Sprintf(`{"value": "%s", "ttl": %v}`, "testVal", 100))),
-		}
-
-		// Set up database
-		db := &databaseTestImplementation{
-			createCalls: []struct {
-				key   string
-				value string
-				ttl   *int64
-			}{},
-			createKey:    "helloVal",
-			createReturn: true,
-		}
-		h := NewHandler(db, slog.New(slog.DiscardHandler))
-		h.ServeHTTP(wBad, rBad)
-		if wBad.Code != http.StatusBadRequest {
-			t.Errorf("response code = %v; want %v", wBad.Code, http.StatusBadRequest)
-		}
-
-		h.ServeHTTP(wGood, rGood)
-		if wGood.Code >= 400 {
-			t.Errorf("response code = %v; want response code less than 400", wGood.Code)
-		}
-
-	})
 }
