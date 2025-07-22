@@ -69,42 +69,80 @@ func generatePost() struct {
 	return data
 }
 
-// BenchmarkDatabaseOperations only benchmarks the database
-func BenchmarkDatabaseOperations(b *testing.B) {
-	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+var tests = []struct {
+	name     string   // The test case name
+	validOps []string // The valid operations to be selected from
+}{
+	{
+		name:     "PUT only",
+		validOps: []string{"PUT"},
+	},
+	{
+		name:     "CREATE only",
+		validOps: []string{"POST"},
+	},
+	{
+		name:     "GET only",
+		validOps: []string{"GET"},
+	},
+	{
+		name:     "TTL only",
+		validOps: []string{"TTL"},
+	},
+	{
+		name:     "DELETE only",
+		validOps: []string{"DELETE"},
+	},
+	{
+		name:     "PUB only",
+		validOps: []string{"PUB"},
+	},
+	{
+		name:     "ALL",
+		validOps: []string{"GET", "POST", "PUT", "DELETE", "TTL", "PUB"},
+	},
+}
 
-	tests := []struct {
-		name     string   // The test case name
-		validOps []string // The valid operations to be selected from
-	}{
-		{
-			name:     "PUT only",
-			validOps: []string{"PUT"},
-		},
-		{
-			name:     "CREATE only",
-			validOps: []string{"POST"},
-		},
-		{
-			name:     "GET only",
-			validOps: []string{"GET"},
-		},
-		{
-			name:     "TTL only",
-			validOps: []string{"TTL"},
-		},
-		{
-			name:     "DELETE only",
-			validOps: []string{"DELETE"},
-		},
-		{
-			name:     "ALL",
-			validOps: []string{"GET", "POST", "PUT", "DELETE", "TTL"},
-		},
-	}
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	puSize := 500000
-	putRequests := make([]struct {
+var puSize = 500000
+var putRequests = make([]struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Ttl   *int64 `json:"ttl"`
+}, puSize)
+var pu atomic.Int64
+
+var poSize = 500000
+var postRequests = make([]struct {
+	Value string `json:"value"`
+	Ttl   *int64 `json:"ttl"`
+}, poSize)
+var po atomic.Int64
+
+var gSize = 500000
+var getRequests = make([]string, gSize)
+var g atomic.Int64
+
+var gtSize = 500000
+var getTTLRequests = make([]string, gtSize)
+var gt atomic.Int64
+
+var dSize = 500000
+var deleteRequests = make([]string, dSize)
+var d atomic.Int64
+
+var pubSize = 500000
+var pubRequests = make([]struct {
+	message string
+	channel string
+}, pubSize)
+
+var pub atomic.Int64
+
+// Set up randomly generated operations
+func setup() {
+	putRequests = make([]struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
@@ -112,40 +150,51 @@ func BenchmarkDatabaseOperations(b *testing.B) {
 	for i := 0; i < puSize; i++ {
 		putRequests = append(putRequests, generatePut())
 	}
-	var pu atomic.Int64
 
-	poSize := 500000
-	postRequests := make([]struct {
+	postRequests = make([]struct {
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
 	}, poSize)
 	for i := 0; i < poSize; i++ {
 		postRequests = append(postRequests, generatePost())
 	}
-	var po atomic.Int64
 
-	gSize := 500000
-	getRequests := make([]string, gSize)
+	getRequests = make([]string, gSize)
 	for i := 0; i < gSize; i++ {
 		getRequests = append(getRequests, randomString(10))
 	}
-	var g atomic.Int64
 
-	gtSize := 500000
-	getTTLRequests := make([]string, gtSize)
+	getTTLRequests = make([]string, gtSize)
 	for i := 0; i < gtSize; i++ {
 		getTTLRequests = append(getTTLRequests, randomString(10))
 	}
-	var gt atomic.Int64
 
-	dSize := 500000
-	deleteRequests := make([]string, dSize)
+	deleteRequests = make([]string, dSize)
 	for i := 0; i < dSize; i++ {
 		deleteRequests = append(deleteRequests, randomString(10))
 	}
-	var d atomic.Int64
+
+	pubRequests = make([]struct {
+		message string
+		channel string
+	}, pubSize)
+	for i := 0; i < pubSize; i++ {
+		pubRequests = append(pubRequests, struct {
+			message string
+			channel string
+		}{message: randomString(10), channel: randomString(2)})
+	}
+}
+
+// BenchmarkDatabaseOperations only benchmarks the database
+func BenchmarkDatabaseOperations(b *testing.B) {
+	setup()
 
 	for _, tt := range tests {
+		if tt.name == "PUB only" {
+			continue
+		}
+
 		tt := tt // Capture for go routines
 		b.Run(tt.name, func(b *testing.B) {
 			b.ReportAllocs()
@@ -154,7 +203,11 @@ func BenchmarkDatabaseOperations(b *testing.B) {
 
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
-					funcType := tt.validOps[rand.Intn(len(tt.validOps))]
+					funcType := "PUB"
+					for funcType == "PUB" {
+						funcType = tt.validOps[rand.Intn(len(tt.validOps))]
+					}
+
 					switch funcType {
 					case "PUT":
 						index := int(pu.Add(1)) % puSize
@@ -180,96 +233,7 @@ func BenchmarkDatabaseOperations(b *testing.B) {
 
 // BenchmarkHTTP benchmarks the http handler injected with InMemoryDatabase
 func BenchmarkHTTP(b *testing.B) {
-	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	tests := []struct {
-		name     string   // The test case name
-		validOps []string // The valid operations to be selected from
-	}{
-		{
-			name:     "PUT only",
-			validOps: []string{"PUT"},
-		},
-		{
-			name:     "CREATE only",
-			validOps: []string{"POST"},
-		},
-		{
-			name:     "GET only",
-			validOps: []string{"GET"},
-		},
-		{
-			name:     "TTL only",
-			validOps: []string{"TTL"},
-		},
-		{
-			name:     "DELETE only",
-			validOps: []string{"DELETE"},
-		},
-		{
-			name:     "PUB only",
-			validOps: []string{"PUB"},
-		},
-		{
-			name:     "ALL",
-			validOps: []string{"GET", "POST", "PUT", "DELETE", "TTL", "PUB"},
-		},
-	}
-
-	puSize := 500000
-	putRequests := make([]struct {
-		Key   string `json:"key"`
-		Value string `json:"value"`
-		Ttl   *int64 `json:"ttl"`
-	}, puSize)
-	for i := 0; i < puSize; i++ {
-		putRequests = append(putRequests, generatePut())
-	}
-	var pu atomic.Int64
-
-	poSize := 500000
-	postRequests := make([]struct {
-		Value string `json:"value"`
-		Ttl   *int64 `json:"ttl"`
-	}, poSize)
-	for i := 0; i < poSize; i++ {
-		postRequests = append(postRequests, generatePost())
-	}
-	var po atomic.Int64
-
-	gSize := 500000
-	getRequests := make([]string, gSize)
-	for i := 0; i < gSize; i++ {
-		getRequests = append(getRequests, randomString(10))
-	}
-	var g atomic.Int64
-
-	gtSize := 500000
-	getTTLRequests := make([]string, gtSize)
-	for i := 0; i < gtSize; i++ {
-		getTTLRequests = append(getTTLRequests, randomString(10))
-	}
-	var gt atomic.Int64
-
-	dSize := 500000
-	deleteRequests := make([]string, dSize)
-	for i := 0; i < dSize; i++ {
-		deleteRequests = append(deleteRequests, randomString(10))
-	}
-	var d atomic.Int64
-
-	pubSize := 500000
-	pubRequests := make([]struct {
-		message string
-		channel string
-	}, pubSize)
-	for i := 0; i < pubSize; i++ {
-		pubRequests = append(pubRequests, struct {
-			message string
-			channel string
-		}{message: randomString(10), channel: randomString(2)})
-	}
-	var pub atomic.Int64
+	setup()
 
 	for _, tt := range tests {
 		tt := tt // Capture for go routines
@@ -279,7 +243,7 @@ func BenchmarkHTTP(b *testing.B) {
 			db, _ := database.NewInMemoryDatabase(database.WithLogger(discardLogger))
 			h := handler.NewHandler(db, discardLogger)
 
-			// Add 100,000 subscribers
+			// Add 10,000 subscribers
 			if slices.Contains(tt.validOps, "PUB") {
 				subSize := 10000
 				sUrl := "/v1/subscribe/"
@@ -344,9 +308,4 @@ func BenchmarkHTTP(b *testing.B) {
 			})
 		})
 	}
-}
-
-// BenchmarkCLI benchmarks the cli commands with the http handler and InMemoryDatabase
-func BenchmarkCLI(b *testing.B) {
-
 }

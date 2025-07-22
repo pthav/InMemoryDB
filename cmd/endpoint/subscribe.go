@@ -24,7 +24,7 @@ will subscribe to channel 'hello' for up to 30 seconds.`,
 			// Create an http request for subscription that will automatically disconnect after the expiration
 			client := http.Client{}
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(o.timeout)*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), time.Duration(o.timeout)*time.Second)
 			defer cancel()
 
 			url := fmt.Sprintf("%v/v1/subscribe/%s", o.rootURL, o.channel)

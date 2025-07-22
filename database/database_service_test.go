@@ -494,6 +494,7 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 			SetupHelper(i, &tt.functions, &tt.expectedOrder)
 
 			// Get all ttlHeap information
+			i.mu.Lock()
 			var copyHeap []ttlHeapData
 			for _, data := range *i.ttl {
 				key := data.key
@@ -502,6 +503,7 @@ func TestInMemoryDatabase_Heap(t *testing.T) {
 					copyHeap = append(copyHeap, data)
 				}
 			}
+			i.mu.Unlock()
 
 			// Sort ttlHeap in decreasing order by the TTL value
 			sort.Slice(copyHeap, func(i, j int) bool {

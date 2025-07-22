@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRootCmd() *cobra.Command {
+func NewRootCmd() *cobra.Command {
 	// rootCmd represents the base command when called without any subcommands
 	var rootCmd = &cobra.Command{
 		Use:   "InMemoryDB",
@@ -25,7 +25,7 @@ to send requests to the already served database.`,
 }
 
 func Execute() {
-	err := newRootCmd().Execute()
+	err := NewRootCmd().Execute()
 	if err != nil {
 		os.Exit(1)
 	}

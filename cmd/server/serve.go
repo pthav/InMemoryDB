@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -54,6 +55,7 @@ func newServeCmd() *cobra.Command {
 	var persistencePeriod int
 	var persistFile string
 	var shouldPersist bool
+	var noLog bool
 
 	// serveCmd serves up a database
 	var serveCmd = &cobra.Command{
@@ -66,7 +68,11 @@ Flags can be provided to configure the database`,
 
 			// Use args to create configuration functions
 			var config []database.Options
-			config = append(config, database.WithLogger(logger))
+			if noLog {
+				config = append(config, database.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
+			} else {
+				config = append(config, database.WithLogger(logger))
+			}
 			config = append(config, database.WithPersistencePeriod(time.Duration(persistencePeriod)*time.Second))
 			if shouldPersist {
 				config = append(config, database.WithPersistence())
@@ -144,6 +150,7 @@ Flags can be provided to configure the database`,
 	serveCmd.Flags().IntVarP(&persistencePeriod, "persist-cycle", "c", 60, "How long the persistence cycle should be in seconds.")
 	serveCmd.Flags().StringVar(&persistFile, "persist-file", "", "File to persist the database to.")
 	serveCmd.Flags().BoolVar(&shouldPersist, "persist", false, "Enables persistence.")
+	serveCmd.Flags().BoolVar(&noLog, "no-log", false, "Disables logging output.")
 	serveCmd.MarkFlagsRequiredTogether("persist-file", "persist")
 
 	return serveCmd
