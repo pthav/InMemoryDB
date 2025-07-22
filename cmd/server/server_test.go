@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -65,9 +66,27 @@ func TestCommand_serve(t *testing.T) {
 				t.Error(err)
 			}
 
-			// Check Settings
+			// Scan the output for the JSON settings
+			var jsonLines []string
+			scanner := bufio.NewScanner(strings.NewReader(out))
+			insideSettings := false
+			for scanner.Scan() {
+				line := scanner.Text()
+				switch {
+				case strings.Contains(line, "START_JSON_SETTINGS"):
+					insideSettings = true
+				case strings.Contains(line, "END_JSON_SETTINGS"):
+					insideSettings = false
+				default:
+					if insideSettings {
+						jsonLines = append(jsonLines, line)
+					}
+				}
+			}
+			actualJson := strings.Join(jsonLines, "\n")
 			var result Settings
-			err = json.Unmarshal([]byte(out), &result)
+			err = json.Unmarshal([]byte(actualJson), &result)
+
 			expected := Settings{
 				Host:              "localhost:8080",
 				StartupFile:       tt.startupFile,

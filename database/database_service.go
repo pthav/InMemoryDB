@@ -51,10 +51,17 @@ func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
 
 	go db.ttlCleanup()
 	if db.s.shouldPersist {
-		go db.persist()
+		go db.persistCycle()
 	}
 
 	return
+}
+
+// Shutdown will persist one last time if it is enabled.
+func (i *InMemoryDatabase) Shutdown() {
+	if i.s.shouldPersist {
+		i.persist()
+	}
 }
 
 // GetSettings returns the database settings so that the settings struct does not have to be an exported type
@@ -175,6 +182,7 @@ func (i *InMemoryDatabase) Delete(key string) bool {
 
 // ttlCleanup performs routine ttlHeap cleanup
 func (i *InMemoryDatabase) ttlCleanup() {
+	i.s.logger.Info("starting ttl cleanup routine")
 	for {
 		i.mu.Lock()
 
@@ -214,45 +222,53 @@ func (i *InMemoryDatabase) ttlCleanup() {
 	}
 }
 
-// Persist will persist all storage to filename output every interval in seconds.
-func (i *InMemoryDatabase) persist() {
+// persistCycle will call the persist function based on a configured period
+func (i *InMemoryDatabase) persistCycle() {
+	i.s.logger.Info("starting persistence routine")
 	for {
 		<-time.After(i.s.persistencePeriod)
-
-		// Make sure the file is open
-		i.mu.Lock()
-
-		file, err := os.Create(i.s.persistFile)
-
-		if err != nil {
-			i.s.logger.Error("Error opening/creating persistence file: ", "err", err)
-			i.mu.Unlock()
-			continue
-		}
-
-		data, err := json.MarshalIndent(i, "", "  ")
-		if err != nil {
-			i.s.logger.Error("Error marshaling database: ", "err", err)
-			i.mu.Unlock()
-			continue
-		}
-
-		_, err = file.Write(data)
-		if err != nil {
-			i.s.logger.Error("Error writing database json to file: ", "err", err)
-			i.mu.Unlock()
-			continue
-		}
-
-		err = file.Close()
-		if err != nil {
-			i.s.logger.Error("Error closing persistence file: ", "err", err)
-			i.mu.Unlock()
-			continue
-		}
-		i.mu.Unlock()
+		i.persist()
 	}
 }
+
+// persist will attempt to persist all storage data to the configured output file
+func (i *InMemoryDatabase) persist() {
+	i.mu.Lock()
+	i.s.logger.Info("attempting to persist data")
+
+	// Make sure the file is open
+	file, err := os.Create(i.s.persistFile)
+
+	if err != nil {
+		i.s.logger.Error("Error opening/creating persistence file: ", "err", err)
+		i.mu.Unlock()
+		return
+	}
+
+	data, err := json.MarshalIndent(i, "", "  ")
+	if err != nil {
+		i.s.logger.Error("Error marshaling database: ", "err", err)
+		i.mu.Unlock()
+		return
+	}
+
+	_, err = file.Write(data)
+	if err != nil {
+		i.s.logger.Error("Error writing database json to file: ", "err", err)
+		i.mu.Unlock()
+		return
+	}
+
+	err = file.Close()
+	if err != nil {
+		i.s.logger.Error("Error closing persistence file: ", "err", err)
+		i.mu.Unlock()
+		return
+	}
+	i.mu.Unlock()
+}
+
+// These helper functions assume the caller has locked the database mutex
 
 // If the key exists in the database, return the associated entry alongside True.
 // Otherwise, return the zero value alongside False.

@@ -7,13 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // Settings define user-configurable Settings for the database and http server
@@ -23,6 +27,25 @@ type Settings struct {
 	ShouldPersist     bool          `json:"shouldPersist"`     // Whether there should be persistence or not
 	PersistFile       string        `json:"persistFile"`       // The file name for which to output persistence to
 	PersistencePeriod time.Duration `json:"persistencePeriod"` // How long in between database persistence cycles
+}
+
+// shutdown is called when the http server is shutting down gracefully
+func shutdown(db *database.InMemoryDatabase, c *cobra.Command) {
+	minWait := int64(5) // The minimum time to wait in seconds. This is exceeded only if shutdown functions take longer.
+	_, _ = c.OutOrStdout().Write([]byte("Shutting down server...\n"))
+
+	start := time.Now().Unix()
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Shutdown()
+	}()
+	wg.Wait()
+
+	// Only wait if minWait has not elapsed
+	timeLeft := time.Duration(max(minWait-(time.Now().Unix()-start), int64(0))) * time.Second
+	<-time.After(timeLeft)
 }
 
 func newServeCmd() *cobra.Command {
@@ -71,19 +94,47 @@ Flags can be provided to configure the database`,
 				return errors.New(fmt.Sprintf("error marshalling response: %v", err))
 			}
 
-			_, err = cmd.OutOrStdout().Write(append(out, '\n'))
+			out = []byte(fmt.Sprintf("STARTING DATABASE\nSTART_JSON_SETTINGS\n%s\nEND_JSON_SETTINGS\n", string(out)))
+			_, err = cmd.OutOrStdout().Write(out)
 			if err != nil {
 				return err
 			}
 
-			h := &http.Server{Addr: host, Handler: handler.NewHandler(db, logger)}
-			ctx := cmd.Context()
-			go func() { // Allow server shutdown with a set context
-				<-ctx.Done()
-				log.Println("Shutting down server...")
-				_ = h.Shutdown(context.Background())
-			}()
-			_ = h.ListenAndServe()
+			// This context will cancel either when the request is canceled or on shut down
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
+			h := &http.Server{
+				Addr:    host,
+				Handler: handler.NewHandler(db, logger),
+				BaseContext: func(listener net.Listener) context.Context {
+					return ctx
+				},
+			}
+
+			shutdownWG := &sync.WaitGroup{} // Force server shutdown to wait
+			shutdownWG.Add(1)
+			h.RegisterOnShutdown(func() {
+				go func() {
+					defer shutdownWG.Done()
+					shutdown(db, cmd)
+				}()
+			})
+
+			g, gCtx := errgroup.WithContext(ctx)
+			g.Go(func() error {
+				return h.ListenAndServe()
+			})
+			g.Go(func() error { // Allow server shutdown with a set context
+				<-gCtx.Done()
+				err = h.Shutdown(context.Background())
+				shutdownWG.Wait()
+				return err
+			})
+
+			if err = g.Wait(); err != nil {
+				_, _ = cmd.OutOrStdout().Write([]byte(fmt.Sprintf("exit reason: %v\n", err)))
+			}
 			return nil
 		},
 	}
@@ -98,6 +149,5 @@ Flags can be provided to configure the database`,
 	return serveCmd
 }
 
-// go run main.go server serve -p 7070 -c 6 --persist --persist-file persist.json --startup-file startup.json
 func init() {
 }

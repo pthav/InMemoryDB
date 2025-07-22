@@ -97,7 +97,7 @@ func (h *testHandler) publish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte(`{"error":"null"}"`))
+	_, err := w.Write([]byte(`{"error":"null"}`))
 	if err != nil {
 		return
 	}
@@ -140,7 +140,7 @@ func TestCommand_pubSub(t *testing.T) {
 			},
 			publishers: []publisher{
 				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 30 * time.Millisecond},
 			},
 		},
 		{
@@ -154,11 +154,11 @@ func TestCommand_pubSub(t *testing.T) {
 			},
 			publishers: []publisher{
 				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "test", message: "message2", wait: 20 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 30 * time.Millisecond},
 				{channel: "dogs", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "dogs", message: "message2", wait: 20 * time.Millisecond},
-				{channel: "dogs", message: "message3", wait: 30 * time.Millisecond},
-				{channel: "dogs", message: "message4", wait: 40 * time.Millisecond},
+				{channel: "dogs", message: "message2", wait: 30 * time.Millisecond},
+				{channel: "dogs", message: "message3", wait: 50 * time.Millisecond},
+				{channel: "dogs", message: "message4", wait: 70 * time.Millisecond},
 			},
 		},
 	}

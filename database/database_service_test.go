@@ -687,14 +687,14 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 
 			data, err := os.ReadFile(fp)
 			if err != nil {
-				t.Errorf("Failed to read persist.json")
+				t.Fatal("Failed to read persist.json")
 			}
 
 			var db *InMemoryDatabase
 
 			err = json.Unmarshal(data, &db)
 			if err != nil {
-				t.Errorf("Failed to unmarshal persist.json")
+				t.Fatal("Failed to unmarshal persist.json")
 			}
 
 			if !reflect.DeepEqual(db.ttl, i.ttl) {
