@@ -32,7 +32,7 @@ type Settings struct {
 
 // shutdown is called when the http server is shutting down gracefully
 func shutdown(db *database.InMemoryDatabase, c *cobra.Command) {
-	minWait := int64(5) // The minimum time to wait in seconds. This is exceeded only if shutdown functions take longer.
+	minWait := int64(1) // The minimum time to wait in seconds. This is exceeded only if shutdown functions take longer.
 	_, _ = c.OutOrStdout().Write([]byte("Shutting down server...\n"))
 
 	start := time.Now().Unix()

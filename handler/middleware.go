@@ -77,6 +77,21 @@ func (h *Wrapper) prometheusMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
+		var url string
+		rawURL := r.URL.String()
+		switch {
+		case strings.Contains(rawURL, "publish"):
+			url = "/v1/publish/"
+		case strings.Contains(rawURL, "subscribe"):
+			url = "/v1/subscribe/"
+		case strings.Contains(rawURL, "ttl"):
+			url = "/v1/ttl/"
+		case rawURL == "/v1/keys":
+			url = "/v1/keys"
+		default:
+			url = "/v1/keys/"
+		}
+
 		// Subscription gauge
 		if strings.Contains(r.URL.Path, "subscribe") {
 			h.m.dbSubscriptions.Inc()
@@ -91,7 +106,7 @@ func (h *Wrapper) prometheusMiddleware(next http.Handler) http.Handler {
 		// Request counter
 		requestCounter, err := h.m.dbHttpRequestCounter.GetMetricWithLabelValues(
 			r.Method,
-			r.URL.Path,
+			url,
 			fmt.Sprintf("%v", sw.statusCode),
 		)
 
@@ -104,12 +119,14 @@ func (h *Wrapper) prometheusMiddleware(next http.Handler) http.Handler {
 		// Latency histogram
 		latency, err := h.m.dbLatency.GetMetricWithLabelValues(
 			r.Method,
-			r.URL.Path,
+			url,
 			fmt.Sprintf("%v", sw.statusCode),
 		)
 
 		if err == nil {
-			latency.Observe(float64(after - before))
+			l := float64(after - before)
+			h.logger.Info("prometheus metrics latency", "latency", l)
+			latency.Observe(l)
 		} else {
 			h.logger.Error("prometheus metrics error", "err", err)
 		}

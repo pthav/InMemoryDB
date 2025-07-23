@@ -11,11 +11,14 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
 // databaseTestImplementation is an implementation of database used for test cases
 type databaseTestImplementation struct {
+	mu sync.RWMutex
+
 	createCalls []struct {
 		key   string
 		value string
@@ -49,6 +52,8 @@ func (db *databaseTestImplementation) Create(data struct {
 	Value string `json:"value"`
 	Ttl   *int64 `json:"ttl"`
 }) (bool, string) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	db.createCalls = append(db.createCalls, struct {
 		key   string
 		value string
@@ -58,6 +63,8 @@ func (db *databaseTestImplementation) Create(data struct {
 }
 
 func (db *databaseTestImplementation) Get(key string) (string, bool) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
 	db.readCalls = append(db.readCalls, struct {
 		key string
 	}{key})
@@ -69,6 +76,8 @@ func (db *databaseTestImplementation) Put(data struct {
 	Value string `json:"value"`
 	Ttl   *int64 `json:"ttl"`
 }) bool {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	db.putCalls = append(db.putCalls, struct {
 		key   string
 		value string
@@ -78,6 +87,8 @@ func (db *databaseTestImplementation) Put(data struct {
 }
 
 func (db *databaseTestImplementation) Delete(key string) bool {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	db.deleteCalls = append(db.deleteCalls, struct {
 		key string
 	}{key})
@@ -85,6 +96,8 @@ func (db *databaseTestImplementation) Delete(key string) bool {
 }
 
 func (db *databaseTestImplementation) GetTTL(key string) (*int64, bool) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
 	db.getTTLCalls = append(db.getTTLCalls, struct {
 		key string
 	}{key})
@@ -122,6 +135,7 @@ func testHelper(t *testing.T, tt testCase, method string, path string, body stri
 
 	// Set up database
 	db := &databaseTestImplementation{
+		mu:           sync.RWMutex{},
 		createReturn: tt.createReturn,
 		createKey:    tt.key,
 		readReturn:   tt.readReturn,
@@ -460,6 +474,7 @@ func TestJsonValidationPost(t *testing.T) {
 
 		// Set up database
 		db := &databaseTestImplementation{
+			mu: sync.RWMutex{},
 			createCalls: []struct {
 				key   string
 				value string
@@ -502,6 +517,7 @@ func TestJsonValidationPut(t *testing.T) {
 
 		// Set up database
 		db := &databaseTestImplementation{
+			mu: sync.RWMutex{},
 			createCalls: []struct {
 				key   string
 				value string
