@@ -125,7 +125,6 @@ func (h *Wrapper) prometheusMiddleware(next http.Handler) http.Handler {
 
 		if err == nil {
 			l := float64(after - before)
-			h.logger.Info("prometheus metrics latency", "latency", l)
 			latency.Observe(l)
 		} else {
 			h.logger.Error("prometheus metrics error", "err", err)

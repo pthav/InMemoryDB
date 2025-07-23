@@ -2,7 +2,7 @@ package main
 
 import "InMemoryDB/cmd"
 
-// Rate limiting on IP, add TTL to post and put commands, integration tests, fuzz tests, metric tests, authentication?
+// Rate limiting on IP, authentication, docker, integration tests
 func main() {
 	cmd.Execute()
 }

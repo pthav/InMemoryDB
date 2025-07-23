@@ -74,6 +74,7 @@ type Options struct {
 	rootURL string
 	key     string
 	value   string
+	ttl     int
 	channel string
 	timeout int
 	message string

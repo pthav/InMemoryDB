@@ -9,14 +9,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 type testCase struct {
 	name             string   // Test case name
+	commandName      string   // The command name
 	key              string   // Key for the request
 	value            string   // Value for the request
+	ttl              *int64   // TTL value for the request
 	returnStatus     int      // What the handler should set the status to
 	response         any      // The response the handler should return
 	writeBadJSON     bool     // Whether the server should write bad JSON
@@ -62,10 +65,52 @@ func execute(t *testing.T, c *cobra.Command, args ...string) (string, error) {
 }
 
 // handlerHelper creates and returns a new mux router for the test cases.
-func handlerHelper(url string, returnStatus int, response any, badJSON bool) *mux.Router {
+func handlerHelper(url string, returnStatus int, response any, badJSON bool, t *testing.T, tt testCase) *mux.Router {
 	var router *mux.Router
 	router = mux.NewRouter()
 	router.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
+		switch tt.commandName {
+		case "post":
+			var data HTTPPostRequest
+			_ = json.NewDecoder(r.Body).Decode(&data)
+			if tt.ttl == nil && data.Ttl != nil {
+				t.Errorf("expected ttl to be %v, got %v", tt.ttl, data.Ttl)
+			} else if tt.ttl != nil && *data.Ttl != *tt.ttl {
+				t.Errorf("expected ttl to be %v, got %v", *tt.ttl, *data.Ttl)
+			}
+
+			if data.Value != tt.value {
+				t.Errorf("expected value to be %v, got %v", tt.value, data.Value)
+			}
+		case "get":
+			k := mux.Vars(r)["key"]
+			if k != tt.key {
+				t.Errorf("expected key to be %v, got %v", k, tt.key)
+			}
+		case "delete":
+			k := mux.Vars(r)["key"]
+			if k != tt.key {
+				t.Errorf("expected key to be %v, got %v", k, tt.key)
+			}
+		case "put":
+			var data HTTPPutRequest
+			_ = json.NewDecoder(r.Body).Decode(&data)
+			if (tt.ttl == nil) != (data.Ttl == nil) {
+				t.Errorf("expected ttl to be %v, got %v", tt.ttl, data.Ttl)
+			} else if tt.ttl != nil && *data.Ttl != *tt.ttl {
+				t.Errorf("expected ttl to be %v, got %v", *tt.ttl, *data.Ttl)
+			}
+
+			if data.Value != tt.value {
+				t.Errorf("expected value to be %v, got %v", tt.value, data.Value)
+			}
+		case "getTTL":
+			k := mux.Vars(r)["key"]
+			if k != tt.key {
+				t.Errorf("expected key to be %v, got %v", k, tt.key)
+			}
+		}
+
 		w.WriteHeader(returnStatus)
 
 		// Write badJSON if necessary for the test case
@@ -89,14 +134,14 @@ func handlerHelper(url string, returnStatus int, response any, badJSON bool) *mu
 // testHelper will spin up a test server for sending requests to, execute the command, and check outputs.
 func testHelper(t *testing.T, tt testCase, url string, args []string) {
 	// Spin up mock server
-	h := handlerHelper(url, tt.returnStatus, tt.response, tt.writeBadJSON)
+	h := handlerHelper(url, tt.returnStatus, tt.response, tt.writeBadJSON, t, tt)
 	ts := httptest.NewServer(h)
 	defer ts.Close()
 
 	if tt.badURL {
-		args = append(args, "--bad-url")
+		args = append(args, "-u", "--bad-url")
 	} else {
-		args = append(args, ts.URL)
+		args = append(args, "-u", ts.URL)
 	}
 
 	// Prevent persistence between test cases
@@ -151,10 +196,15 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 	}
 }
 
+func intToPtr(i int64) *int64 {
+	return &i
+}
+
 func TestCommand_get(t *testing.T) {
 	tests := []testCase{
 		{
 			name:         "Test forwards response",
+			commandName:  "get",
 			key:          "hello",
 			returnStatus: 200,
 			response:     HTTPGetResponse{Status: 200, Key: "hello", Value: "world", Error: "null"},
@@ -164,6 +214,7 @@ func TestCommand_get(t *testing.T) {
 		},
 		{
 			name:             "Missing the key flag",
+			commandName:      "get",
 			alternateArgs:    []string{"get"},
 			useAlternateArgs: true,
 			shouldError:      true,
@@ -176,7 +227,7 @@ func TestCommand_get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys/{key}"
-			args := []string{"get", "-k", tt.key, "-u"}
+			args := []string{"get", "-k", tt.key}
 			if tt.useAlternateArgs {
 				testHelper(t, tt, url, tt.alternateArgs)
 			} else {
@@ -190,6 +241,7 @@ func TestCommand_delete(t *testing.T) {
 	tests := []testCase{
 		{
 			name:         "Test forwards response",
+			commandName:  "delete",
 			key:          "hello",
 			returnStatus: 200,
 			response:     StatusPlusErrorResponse{Status: 200, Error: "null"},
@@ -199,6 +251,7 @@ func TestCommand_delete(t *testing.T) {
 		},
 		{
 			name:             "Missing the key flag",
+			commandName:      "delete",
 			alternateArgs:    []string{"delete"},
 			useAlternateArgs: true,
 			shouldError:      true,
@@ -210,7 +263,7 @@ func TestCommand_delete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys/{key}"
-			args := []string{"delete", "-k", tt.key, "-u"}
+			args := []string{"delete", "-k", tt.key}
 			if tt.useAlternateArgs {
 				testHelper(t, tt, url, tt.alternateArgs)
 			} else {
@@ -224,6 +277,7 @@ func TestCommand_put(t *testing.T) {
 	tests := []testCase{
 		{
 			name:         "Test forwards response",
+			commandName:  "put",
 			key:          "hello",
 			value:        "world",
 			returnStatus: 200,
@@ -233,7 +287,20 @@ func TestCommand_put(t *testing.T) {
 			shouldError:  false,
 		},
 		{
+			name:         "Test forwards response with TTL",
+			commandName:  "put",
+			key:          "hello",
+			value:        "world",
+			ttl:          intToPtr(10),
+			returnStatus: 200,
+			response:     StatusPlusErrorResponse{Status: 200, Error: "null"},
+			writeBadJSON: false,
+			badURL:       false,
+			shouldError:  false,
+		},
+		{
 			name:             "Missing the key flag",
+			commandName:      "put",
 			alternateArgs:    []string{"put", "-v", "world"},
 			useAlternateArgs: true,
 			shouldError:      true,
@@ -241,6 +308,7 @@ func TestCommand_put(t *testing.T) {
 		},
 		{
 			name:             "Missing the value flag",
+			commandName:      "put",
 			alternateArgs:    []string{"put", "-k", "hello"},
 			useAlternateArgs: true,
 			shouldError:      true,
@@ -252,7 +320,10 @@ func TestCommand_put(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys/{key}"
-			args := []string{"put", "-k", tt.key, "-v", tt.value, "-u"}
+			args := []string{"put", "-k", tt.key, "-v", tt.value}
+			if tt.ttl != nil {
+				args = append(args, "--ttl", strconv.Itoa(int(*tt.ttl)))
+			}
 			if tt.useAlternateArgs {
 				testHelper(t, tt, url, tt.alternateArgs)
 			} else {
@@ -266,6 +337,7 @@ func TestCommand_post(t *testing.T) {
 	tests := []testCase{
 		{
 			name:         "Test forwards response",
+			commandName:  "post",
 			returnStatus: 200,
 			value:        "world",
 			response:     HTTPPostResponse{Status: 200, Key: "postKey", Error: "null"},
@@ -274,7 +346,19 @@ func TestCommand_post(t *testing.T) {
 			shouldError:  false,
 		},
 		{
+			name:         "Test forwards response",
+			commandName:  "post",
+			returnStatus: 200,
+			value:        "world",
+			ttl:          intToPtr(10),
+			response:     HTTPPostResponse{Status: 200, Key: "postKey", Error: "null"},
+			writeBadJSON: false,
+			badURL:       false,
+			shouldError:  false,
+		},
+		{
 			name:             "Missing the value flag",
+			commandName:      "post",
 			alternateArgs:    []string{"post"},
 			useAlternateArgs: true,
 			shouldError:      true,
@@ -286,7 +370,10 @@ func TestCommand_post(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/keys"
-			args := []string{"post", "-v", tt.value, "-u"}
+			args := []string{"post", "-v", tt.value}
+			if tt.ttl != nil {
+				args = append(args, "--ttl", strconv.Itoa(int(*tt.ttl)))
+			}
 			if tt.useAlternateArgs {
 				testHelper(t, tt, url, tt.alternateArgs)
 			} else {
@@ -304,6 +391,7 @@ func TestCommand_getTTL(t *testing.T) {
 	tests := []testCase{
 		{
 			name:         "Test forwards response",
+			commandName:  "getTTL",
 			returnStatus: 200,
 			key:          "hello",
 			response:     HTTPGetTTLResponse{Status: 200, Key: "hello", TTL: intPtr(100), Error: "null"},
@@ -313,6 +401,7 @@ func TestCommand_getTTL(t *testing.T) {
 		},
 		{
 			name:             "Missing the key flag",
+			commandName:      "getTTL",
 			alternateArgs:    []string{"getTTL"},
 			useAlternateArgs: true,
 			shouldError:      true,
@@ -325,7 +414,7 @@ func TestCommand_getTTL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/v1/ttl/{key}"
-			args := []string{"getTTL", "-k", tt.key, "-u"}
+			args := []string{"getTTL", "-k", tt.key}
 			if tt.useAlternateArgs {
 				testHelper(t, tt, url, tt.alternateArgs)
 			} else {

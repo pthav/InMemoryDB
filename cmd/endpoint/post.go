@@ -11,6 +11,11 @@ type HTTPPostResponse struct {
 	Error  string `json:"error"`
 }
 
+type HTTPPostRequest struct {
+	Value string `json:"value"`
+	Ttl   *int64 `json:"ttl"`
+}
+
 func newPostCmd(o *Options) *cobra.Command {
 	// postCmd posts a value to the database
 	var postCmd = &cobra.Command{
@@ -21,10 +26,13 @@ status code are printed to the console. The response body includes the key assoc
 post -v=value -p=8080 will send a post request to the server on port 8080.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create request body
-			requestBody := struct {
-				Value string `json:"value"`
-			}{
+			requestBody := HTTPPostRequest{
 				Value: o.value,
+			}
+
+			if cmd.Flags().Changed("ttl") {
+				ttl := int64(o.ttl)
+				requestBody.Ttl = &ttl
 			}
 
 			// Send request
@@ -41,6 +49,7 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 	}
 
 	postCmd.Flags().StringVarP(&o.value, "value", "v", "", "The value to post to the database")
+	postCmd.Flags().IntVar(&o.ttl, "ttl", 0, "The ttl to post to the database")
 	_ = postCmd.MarkFlagRequired("value")
 
 	return postCmd
