@@ -17,7 +17,8 @@ type databaseEntry struct {
 
 type dbStore map[string]databaseEntry
 
-// InMemoryDatabase stores data in memory using a sync map to ensure thread safety
+// InMemoryDatabase stores data in memory using a sync map to ensure thread safety. Receiver methods for
+// InMemoryDatabase assume already validated inputs. For example, in Put, the key and value should not be empty.
 type InMemoryDatabase struct {
 	database dbStore       // Store the database key, value pairs
 	ttl      *ttlHeap      // Store TTLs on a heap
@@ -140,7 +141,7 @@ func (i *InMemoryDatabase) GetTTL(key string) (*int64, bool) {
 	return nil, true
 }
 
-// Put a key value pair into the database
+// Put a key value pair into the database.
 func (i *InMemoryDatabase) Put(data struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

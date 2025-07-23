@@ -319,6 +319,13 @@ func (h *Wrapper) publishHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	validate := validator.New()
+	err := validate.Struct(pData)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Message required for publish request")
+		return
+	}
+
 	h.broker.mu.RLock()
 	defer h.broker.mu.RUnlock()
 
@@ -331,7 +338,7 @@ func (h *Wrapper) publishHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte(`{}`))
+	_, err = w.Write([]byte(`{}`))
 	if err != nil {
 		return
 	}
