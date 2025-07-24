@@ -5,12 +5,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type HTTPPutRequest struct {
+type httpPutRequest struct {
 	Value string `json:"value"`
 	Ttl   *int64 `json:"ttl"`
 }
 
-func newPutCmd(o *Options) *cobra.Command {
+func newPutCmd(o *options) *cobra.Command {
 	// putCmd puts a key value pair to the database
 	var putCmd = &cobra.Command{
 		Use:   "put",
@@ -20,7 +20,7 @@ The value and key are required for the put request. The response status code is 
 put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the database listening on port 8080.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create request body
-			requestBody := HTTPPutRequest{
+			requestBody := httpPutRequest{
 				Value: o.value,
 			}
 
@@ -30,7 +30,7 @@ put -k=hello -v=world -p=8080 will put the key value pair (hello,world) into the
 			}
 
 			// Send request
-			var response StatusPlusErrorResponse
+			var response statusPlusErrorResponse
 			url := fmt.Sprintf("%v/v1/keys/%v", o.rootURL, o.key)
 			status, err := getResponse("PUT", url, requestBody, &response)
 			if err != nil {

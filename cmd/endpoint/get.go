@@ -5,14 +5,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type HTTPGetResponse struct {
+type httpGetResponse struct {
 	Status int    `json:"status"`
 	Key    string `json:"key"`
 	Value  string `json:"value"`
 	Error  string `json:"error"`
 }
 
-func newGetCmd(o *Options) *cobra.Command {
+func newGetCmd(o *options) *cobra.Command {
 	// getCmd gets a key value pair from the database
 	var getCmd = &cobra.Command{
 		Use:   "get",
@@ -23,7 +23,7 @@ get -k=hello -u='localhost:8080' will return the value associated with the hello
 on port 8080.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Send request
-			var response HTTPGetResponse
+			var response httpGetResponse
 			url := fmt.Sprintf("%v/v1/keys/%s", o.rootURL, o.key)
 			status, err := getResponse("GET", url, nil, &response)
 			if err != nil {

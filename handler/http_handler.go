@@ -227,7 +227,8 @@ func (h *Wrapper) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	if deleted {
 		w.WriteHeader(http.StatusOK)
 	} else {
-		w.WriteHeader(http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "Key not found")
+		return
 	}
 
 	_, err := w.Write([]byte("{}"))

@@ -64,13 +64,13 @@ func getResponse(method string, url string, requestBody any, response any) (int,
 
 // Generic HTTP method response
 
-type StatusPlusErrorResponse struct {
+type statusPlusErrorResponse struct {
 	Status int    `json:"status"` // This isn't output as JSON from the external API it is added after.
 	Error  string `json:"error"`
 }
 
-// Options defines configuration flags for endpoint and its subcommands.
-type Options struct {
+// options defines configuration flags for endpoint and its subcommands.
+type options struct {
 	rootURL string
 	key     string
 	value   string
@@ -90,7 +90,7 @@ of InMemoryDB. The command endpoint get -k=hello -p=8080 will get the key value 
 listening on port 8080`,
 		Run: func(cmd *cobra.Command, args []string) {},
 	}
-	o := Options{}
+	o := options{}
 
 	endpointsCmd.PersistentFlags().StringVarP(&o.rootURL, "rootURL", "u", "http://localhost:8080", "The rootURL to use.")
 

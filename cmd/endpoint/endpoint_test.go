@@ -71,7 +71,7 @@ func handlerHelper(url string, returnStatus int, response any, badJSON bool, t *
 	router.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
 		switch tt.commandName {
 		case "post":
-			var data HTTPPostRequest
+			var data httpPostRequest
 			_ = json.NewDecoder(r.Body).Decode(&data)
 			if tt.ttl == nil && data.Ttl != nil {
 				t.Errorf("expected ttl to be %v, got %v", tt.ttl, data.Ttl)
@@ -93,7 +93,7 @@ func handlerHelper(url string, returnStatus int, response any, badJSON bool, t *
 				t.Errorf("expected key to be %v, got %v", k, tt.key)
 			}
 		case "put":
-			var data HTTPPutRequest
+			var data httpPutRequest
 			_ = json.NewDecoder(r.Body).Decode(&data)
 			if (tt.ttl == nil) != (data.Ttl == nil) {
 				t.Errorf("expected ttl to be %v, got %v", tt.ttl, data.Ttl)
@@ -159,14 +159,14 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 		// Type switch to make result the correct type
 		var result any
 		switch tt.response.(type) {
-		case HTTPGetResponse:
-			result = new(HTTPGetResponse)
-		case HTTPPostResponse:
-			result = new(HTTPPostResponse)
-		case HTTPGetTTLResponse:
-			result = new(HTTPGetTTLResponse)
-		case StatusPlusErrorResponse:
-			result = new(StatusPlusErrorResponse)
+		case httpGetResponse:
+			result = new(httpGetResponse)
+		case httpPostResponse:
+			result = new(httpPostResponse)
+		case httpGetTTLResponse:
+			result = new(httpGetTTLResponse)
+		case statusPlusErrorResponse:
+			result = new(statusPlusErrorResponse)
 		}
 
 		err = json.Unmarshal([]byte(out), &result)
@@ -176,19 +176,19 @@ func testHelper(t *testing.T, tt testCase, url string, args []string) {
 
 		// Type switch to make the correct comparison with the reflect package
 		switch expected := tt.response.(type) {
-		case HTTPGetResponse:
+		case httpGetResponse:
 			if !reflect.DeepEqual(result, &expected) {
 				t.Errorf("got %v\nwant %v", result, &expected)
 			}
-		case HTTPPostResponse:
+		case httpPostResponse:
 			if !reflect.DeepEqual(result, &expected) {
 				t.Errorf("got %v\nwant %v", result, &expected)
 			}
-		case HTTPGetTTLResponse:
+		case httpGetTTLResponse:
 			if !reflect.DeepEqual(result, &expected) {
 				t.Errorf("got %v\nwant %v", result, &expected)
 			}
-		case StatusPlusErrorResponse:
+		case statusPlusErrorResponse:
 			if !reflect.DeepEqual(result, &expected) {
 				t.Errorf("got %v\nwant %v", result, &expected)
 			}
@@ -207,7 +207,7 @@ func TestCommand_get(t *testing.T) {
 			commandName:  "get",
 			key:          "hello",
 			returnStatus: 200,
-			response:     HTTPGetResponse{Status: 200, Key: "hello", Value: "world", Error: "null"},
+			response:     httpGetResponse{Status: 200, Key: "hello", Value: "world", Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -244,7 +244,7 @@ func TestCommand_delete(t *testing.T) {
 			commandName:  "delete",
 			key:          "hello",
 			returnStatus: 200,
-			response:     StatusPlusErrorResponse{Status: 200, Error: "null"},
+			response:     statusPlusErrorResponse{Status: 200, Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -281,7 +281,7 @@ func TestCommand_put(t *testing.T) {
 			key:          "hello",
 			value:        "world",
 			returnStatus: 200,
-			response:     StatusPlusErrorResponse{Status: 200, Error: "null"},
+			response:     statusPlusErrorResponse{Status: 200, Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -293,7 +293,7 @@ func TestCommand_put(t *testing.T) {
 			value:        "world",
 			ttl:          intToPtr(10),
 			returnStatus: 200,
-			response:     StatusPlusErrorResponse{Status: 200, Error: "null"},
+			response:     statusPlusErrorResponse{Status: 200, Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -340,7 +340,7 @@ func TestCommand_post(t *testing.T) {
 			commandName:  "post",
 			returnStatus: 200,
 			value:        "world",
-			response:     HTTPPostResponse{Status: 200, Key: "postKey", Error: "null"},
+			response:     httpPostResponse{Status: 200, Key: "postKey", Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -351,7 +351,7 @@ func TestCommand_post(t *testing.T) {
 			returnStatus: 200,
 			value:        "world",
 			ttl:          intToPtr(10),
-			response:     HTTPPostResponse{Status: 200, Key: "postKey", Error: "null"},
+			response:     httpPostResponse{Status: 200, Key: "postKey", Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,
@@ -394,7 +394,7 @@ func TestCommand_getTTL(t *testing.T) {
 			commandName:  "getTTL",
 			returnStatus: 200,
 			key:          "hello",
-			response:     HTTPGetTTLResponse{Status: 200, Key: "hello", TTL: intPtr(100), Error: "null"},
+			response:     httpGetTTLResponse{Status: 200, Key: "hello", TTL: intPtr(100), Error: "null"},
 			writeBadJSON: false,
 			badURL:       false,
 			shouldError:  false,

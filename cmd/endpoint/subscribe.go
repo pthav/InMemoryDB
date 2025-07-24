@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newSubscribeCmd(o *Options) *cobra.Command {
+func newSubscribeCmd(o *options) *cobra.Command {
 	// subscribeCmd subscribes to a channel in the database
 	var subscribeCmd = &cobra.Command{
 		Use:   "subscribe",

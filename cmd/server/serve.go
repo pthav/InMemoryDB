@@ -69,10 +69,10 @@ Flags can be provided to configure the database`,
 			// Use args to create configuration functions
 			var config []database.Options
 			if noLog {
-				config = append(config, database.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
-			} else {
-				config = append(config, database.WithLogger(logger))
+				logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			}
+			config = append(config, database.WithLogger(logger))
+
 			config = append(config, database.WithPersistencePeriod(time.Duration(persistencePeriod)*time.Second))
 			if shouldPersist {
 				config = append(config, database.WithPersistence())

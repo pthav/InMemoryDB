@@ -5,7 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newPublishCmd(o *Options) *cobra.Command {
+func newPublishCmd(o *options) *cobra.Command {
 	// publishCmd publishes a message to a channel in the database
 	var publishCmd = &cobra.Command{
 		Use:   "publish",
@@ -21,7 +21,7 @@ message. publish -c=hello -m=world will publish 'world' to the channel 'hello' `
 			}
 
 			// Send Request
-			var response StatusPlusErrorResponse
+			var response statusPlusErrorResponse
 			url := fmt.Sprintf("%v/v1/publish/%s", o.rootURL, o.channel)
 			status, err := getResponse("POST", url, payload, &response)
 			if err != nil {

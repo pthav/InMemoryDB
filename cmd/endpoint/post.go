@@ -5,18 +5,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type HTTPPostResponse struct {
+type httpPostResponse struct {
 	Status int    `json:"status"`
 	Key    string `json:"key"`
 	Error  string `json:"error"`
 }
 
-type HTTPPostRequest struct {
+type httpPostRequest struct {
 	Value string `json:"value"`
 	Ttl   *int64 `json:"ttl"`
 }
 
-func newPostCmd(o *Options) *cobra.Command {
+func newPostCmd(o *options) *cobra.Command {
 	// postCmd posts a value to the database
 	var postCmd = &cobra.Command{
 		Use:   "post",
@@ -26,7 +26,7 @@ status code are printed to the console. The response body includes the key assoc
 post -v=value -p=8080 will send a post request to the server on port 8080.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create request body
-			requestBody := HTTPPostRequest{
+			requestBody := httpPostRequest{
 				Value: o.value,
 			}
 
@@ -36,7 +36,7 @@ post -v=value -p=8080 will send a post request to the server on port 8080.`,
 			}
 
 			// Send request
-			var response HTTPPostResponse
+			var response httpPostResponse
 			url := fmt.Sprintf("%v/v1/keys", o.rootURL)
 			status, err := getResponse("POST", url, requestBody, &response)
 			if err != nil {

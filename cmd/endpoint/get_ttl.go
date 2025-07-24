@@ -5,14 +5,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type HTTPGetTTLResponse struct {
+type httpGetTTLResponse struct {
 	Status int    `json:"status"`
 	Key    string `json:"key"`
 	TTL    *int64 `json:"ttl"`
 	Error  string `json:"error"`
 }
 
-func newGetTTLCmd(o *Options) *cobra.Command {
+func newGetTTLCmd(o *options) *cobra.Command {
 	// getTTLCmd gets a key and its TTL from the database
 	var getTTLCmd = &cobra.Command{
 		Use:   "getTTL",
@@ -21,7 +21,7 @@ func newGetTTLCmd(o *Options) *cobra.Command {
 remaining TTL for key 'hello'. The returned TTL will be null if it is a non-expiring key value pair."`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Send request
-			var response HTTPGetTTLResponse
+			var response httpGetTTLResponse
 			url := fmt.Sprintf("%v/v1/ttl/%s", o.rootURL, o.key)
 			status, err := getResponse("GET", url, nil, &response)
 			if err != nil {
