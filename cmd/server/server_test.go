@@ -56,7 +56,7 @@ func TestCommand_serve(t *testing.T) {
 				"--startup-file", tt.startupFile,
 				"-c", fmt.Sprintf("%v", tt.persistencePeriod),
 				"--persist-file", tt.persistFile,
-				"--Host", tt.host,
+				"--host", tt.host,
 			}
 			if tt.shouldPersist {
 				args = append(args, "--persist")

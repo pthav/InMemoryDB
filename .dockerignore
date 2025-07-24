@@ -1,0 +1,11 @@
+./bin/
+
+./tests/
+
+.gitignore
+
+*.env
+
+*.md
+
+LICENSE

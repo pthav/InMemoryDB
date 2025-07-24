@@ -145,7 +145,7 @@ Flags can be provided to configure the database`,
 		},
 	}
 
-	serveCmd.Flags().StringVarP(&host, "Host", "", "localhost:8080", "Host to listen for requests on")
+	serveCmd.Flags().StringVarP(&host, "host", "", "localhost:8080", "Host to listen for requests on")
 	serveCmd.Flags().StringVar(&startupFile, "startup-file", "", "File containing json data to initialize the database with.")
 	serveCmd.Flags().IntVarP(&persistencePeriod, "persist-cycle", "c", 60, "How long the persistence cycle should be in seconds.")
 	serveCmd.Flags().StringVar(&persistFile, "persist-file", "", "File to persist the database to.")

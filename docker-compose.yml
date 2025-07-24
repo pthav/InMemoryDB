@@ -1,0 +1,13 @@
+services:
+  db:
+    build:
+      target: ${GO_ENV}
+      context: .
+      dockerfile: Dockerfile
+    container_name: db_container
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - .:/app

@@ -1,8 +1,10 @@
 package main
 
-import "InMemoryDB/cmd"
+import (
+	"InMemoryDB/cmd"
+)
 
-// Rate limiting on IP, authentication, docker, integration tests
+// integration tests
 func main() {
 	cmd.Execute()
 }

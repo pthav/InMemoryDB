@@ -433,7 +433,7 @@ func TestWrapper_getTTLHandler(t *testing.T) {
 
 				expected := getTTLResponse{Key: tt.key}
 				if tt.ttl != nil {
-					expected.TTL = *tt.ttl
+					expected.TTL = tt.ttl
 				}
 
 				if !reflect.DeepEqual(expected, body) {
