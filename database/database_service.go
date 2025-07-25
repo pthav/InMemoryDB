@@ -33,7 +33,7 @@ func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
 		database: dbStore{},
 		ttl:      &ttlHeap{},
 		mu:       sync.RWMutex{},
-		newItem:  make(chan struct{}),
+		newItem:  make(chan struct{}, 1),
 		s: settings{
 			shouldPersist:     false,
 			persistFile:       "persist.json",
@@ -102,7 +102,7 @@ func (i *InMemoryDatabase) Create(data struct {
 	}
 	_, loaded := i.loadOrStore(id, newEntry)
 	if data.Ttl != nil && !loaded {
-		i.ttl.Push(ttlHeapData{id, ttl})
+		heap.Push(i.ttl, ttlHeapData{id, ttl})
 
 		// Notify cleaner of new TTL
 		select {
@@ -131,7 +131,7 @@ func (i *InMemoryDatabase) GetTTL(key string) (*int64, bool) {
 	defer i.mu.RUnlock()
 
 	dbEntry, loaded := i.load(key)
-	if !loaded {
+	if !loaded || (dbEntry.ttl != nil && *dbEntry.ttl <= time.Now().Unix()) {
 		return nil, false
 	} else if dbEntry.ttl != nil {
 		var ttl int64
@@ -160,7 +160,7 @@ func (i *InMemoryDatabase) Put(data struct {
 	i.store(data.Key, newEntry)
 
 	if data.Ttl != nil {
-		i.ttl.Push(ttlHeapData{data.Key, ttl})
+		heap.Push(i.ttl, ttlHeapData{data.Key, ttl})
 
 		// Notify cleaner of new TTL
 		select {
@@ -205,19 +205,27 @@ func (i *InMemoryDatabase) ttlCleanup() {
 			select {
 			case <-time.After(time.Duration(delay) * time.Second):
 			case <-i.newItem:
+				i.s.logger.Info("ttl cleanup routine new item")
 				continue
 			}
 		}
 
 		i.mu.Lock()
-		heapData := i.ttl.Pop().(ttlHeapData)
-		key := heapData.key
-		ttl := heapData.ttl
+		for len(*i.ttl) > 0 {
+			timeLeft := i.ttl.Peak().(ttlHeapData).ttl - time.Now().Unix()
+			if timeLeft > 0 {
+				break
+			}
 
-		// Delete only if it still exists and the ttl has not been modified
-		dbEntry, loaded := i.load(key)
-		if loaded && dbEntry.ttl != nil && *dbEntry.ttl == ttl {
-			i.delete(key)
+			heapData := heap.Pop(i.ttl).(ttlHeapData)
+			key := heapData.key
+			ttl := heapData.ttl
+
+			// Delete only if it still exists and the ttl has not been modified
+			dbEntry, loaded := i.load(key)
+			if loaded && dbEntry.ttl != nil && *dbEntry.ttl == ttl {
+				i.delete(key)
+			}
 		}
 		i.mu.Unlock()
 	}

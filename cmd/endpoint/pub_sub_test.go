@@ -139,8 +139,8 @@ func TestCommand_pubSub(t *testing.T) {
 				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
 			},
 			publishers: []publisher{
-				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "test", message: "message2", wait: 30 * time.Millisecond},
+				{channel: "test", message: "message1", wait: 50 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 80 * time.Millisecond},
 			},
 		},
 		{
@@ -153,12 +153,12 @@ func TestCommand_pubSub(t *testing.T) {
 				{channel: "dogs", expected: []string{"message1", "message2", "message3", "message4"}, expire: "1"},
 			},
 			publishers: []publisher{
-				{channel: "test", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "test", message: "message2", wait: 30 * time.Millisecond},
-				{channel: "dogs", message: "message1", wait: 10 * time.Millisecond},
-				{channel: "dogs", message: "message2", wait: 30 * time.Millisecond},
-				{channel: "dogs", message: "message3", wait: 50 * time.Millisecond},
-				{channel: "dogs", message: "message4", wait: 70 * time.Millisecond},
+				{channel: "test", message: "message1", wait: 60 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 80 * time.Millisecond},
+				{channel: "dogs", message: "message1", wait: 60 * time.Millisecond},
+				{channel: "dogs", message: "message2", wait: 80 * time.Millisecond},
+				{channel: "dogs", message: "message3", wait: 100 * time.Millisecond},
+				{channel: "dogs", message: "message4", wait: 120 * time.Millisecond},
 			},
 		},
 	}

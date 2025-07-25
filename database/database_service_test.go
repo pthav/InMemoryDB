@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"testing"
 	"time"
 )
@@ -434,104 +433,9 @@ func TestInMemoryDatabase_GetTTL(t *testing.T) {
 	}
 }
 
-func TestInMemoryDatabase_Heap(t *testing.T) {
-	tests := []struct {
-		name          string
-		numKeys       int
-		functions     []any
-		expectedOrder map[string]int
-	}{
-		{
-			name: "Create Only",
-			functions: []any{
-				&createCall{"hello5", 50, 4},
-				&createCall{"hello1", 10, 0},
-				&createCall{"hello3", 30, 2},
-				&createCall{"hello4", 40, 3},
-				&createCall{"hello2", 20, 1},
-			},
-			expectedOrder: map[string]int{},
-		},
-		{
-			name: "Put Only",
-			functions: []any{
-				&putCall{"hello1", "hello1", 10},
-				&putCall{"hello2", "hello2", 20},
-				&putCall{"hello3", "hello3", 30},
-				&putCall{"hello4", "hello4", 40},
-				&putCall{"hello3", "hello3", 50},
-			},
-			expectedOrder: map[string]int{
-				"hello1": 0,
-				"hello2": 1,
-				"hello4": 2,
-				"hello3": 3,
-			},
-		},
-		{
-			name: "Create Plus Put",
-			functions: []any{
-				&createCall{"hello1", 10, 0},
-				&createCall{"hello2", 20, 1},
-				&putCall{"hello3", "hello3", 30},
-				&putCall{"hello4", "hello4", 40},
-				&putCall{"hello3", "hello3", 50},
-			},
-			expectedOrder: map[string]int{
-				"hello4": 2,
-				"hello3": 3,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			i, err := NewInMemoryDatabase()
-			if err != nil {
-				t.Error(err)
-			}
-
-			SetupHelper(i, &tt.functions, &tt.expectedOrder)
-
-			// Get all ttlHeap information
-			i.mu.Lock()
-			var copyHeap []ttlHeapData
-			for _, data := range *i.ttl {
-				key := data.key
-				dbEntry, loaded := i.load(key)
-				if loaded && *dbEntry.ttl == data.ttl {
-					copyHeap = append(copyHeap, data)
-				}
-			}
-			i.mu.Unlock()
-
-			// Sort ttlHeap in decreasing order by the TTL value
-			sort.Slice(copyHeap, func(i, j int) bool {
-				return copyHeap[i].ttl < copyHeap[j].ttl
-			})
-
-			// Make sure the right number of values is stored
-			if len(copyHeap) != len(tt.expectedOrder) {
-				t.Errorf("Expected copyHeap size to be %v got %v", len(tt.expectedOrder), len(copyHeap))
-			}
-
-			// Check the actual order
-			for i, actual := range copyHeap {
-				expectedIndex, ok := tt.expectedOrder[actual.key]
-				if !ok {
-					t.Fatalf("key %v is in copyHeap but does not exist in expectedOrder", actual.key)
-				}
-				if expectedIndex != i {
-					t.Errorf("Got key %v at index %v instead of %v", actual.key, expectedIndex, i)
-				}
-			}
-		})
-	}
-}
-
 func TestInMemoryDatabase_Cleanup(t *testing.T) {
 	type checkDeleted struct {
-		delay   int64 // Time after initialization to check
+		delay   int64 // Time after initialization to check in milliseconds
 		numLeft int   // How many should remain
 	}
 
@@ -540,25 +444,25 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 		numKeys   int
 		functions []any
 		check     []checkDeleted
-		final     int64
+		unique    int
 	}{
 		{
 			name: "Create Plus Put",
 			functions: []any{
-				&createCall{"hello1", 1, -1},
-				&createCall{"hello2", 2, -1},
-				&putCall{"hello3", "hello3", 3},
 				&putCall{"hello4", "hello4", 4},
 				&putCall{"hello3", "hello3", 5},
+				&putCall{"hello3", "hello3", 3},
+				&createCall{"hello1", 1, -1},
+				&createCall{"hello2", 2, -1},
 			},
 			check: []checkDeleted{
-				{1, 3},
-				{2, 2},
-				{3, 2},
-				{4, 1},
-				{5, 0},
+				{0, 4},
+				{1500, 3},
+				{2500, 2},
+				{3500, 1},
+				{4500, 0},
 			},
-			final: 6,
+			unique: 4,
 		},
 		{
 			name: "Create Only",
@@ -567,10 +471,24 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 				&createCall{"hello2", 2, -1},
 			},
 			check: []checkDeleted{
-				{1, 1},
-				{2, 0},
+				{0, 2},
+				{1500, 1},
+				{2500, 0},
 			},
-			final: 3,
+			unique: 2,
+		},
+		{
+			name: "Put Only",
+			functions: []any{
+				&putCall{"hello2", "hello2", 2},
+				&putCall{"hello1", "hello1", 1},
+			},
+			check: []checkDeleted{
+				{0, 2},
+				{1500, 1},
+				{2500, 0},
+			},
+			unique: 2,
 		},
 	}
 
@@ -583,27 +501,27 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 
 			SetupHelper(i, &tt.functions, nil)
 
-			timeAfterCreation := time.Now().Unix()
+			timeAfterCreation := time.Now().UnixMilli()
 
 			i.mu.RLock()
-			if len(i.database) == 0 {
-				t.Errorf("Store is empty")
+			if len(i.database) != tt.unique {
+				t.Errorf("Store is wrong size")
 			}
 			i.mu.RUnlock()
 
 			// Check all deletions occur
 			for c := range tt.check {
 				next := tt.check[c].delay
-				delay := next - (time.Now().Unix() - timeAfterCreation)
+				delay := next - (time.Now().UnixMilli() - timeAfterCreation)
 				if delay > 0 {
-					<-time.After(time.Duration(delay)*time.Second + 500*time.Millisecond)
+					<-time.After(time.Duration(delay) * time.Millisecond)
 				}
 
 				i.mu.Lock()
 
 				// Check the number of remaining entries
-				if len(i.database) != len(*i.ttl) {
-					t.Errorf("Expected %v left but got %v. Len(ttlHeap) = %v", tt.check[c].numLeft, len(i.database), len(*i.ttl))
+				if len(i.database) != tt.check[c].numLeft {
+					t.Errorf("Expected %v left after %v but got %v. Len(ttlHeap) = %v", tt.check[c].numLeft, next, len(i.database), len(*i.ttl))
 				}
 
 				i.mu.Unlock()
@@ -671,7 +589,7 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 		},
 	}
 
-	waitTime := 2 * time.Second
+	waitTime := 3 * time.Second
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

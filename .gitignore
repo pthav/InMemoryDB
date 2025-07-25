@@ -1,3 +1,7 @@
 persist.json
 
 *.env
+
+tmp/
+
+tests/testdata/

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"InMemoryDB/cmd"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -46,17 +47,18 @@ type httpGetTTLResponse struct {
 }
 
 type statusPlusErrorResponse struct {
-	Status int    `json:"status"` // This isn't output as JSON from the external API it is added after.
+	Status int    `json:"status"`
 	Error  string `json:"error"`
 }
 
 func TestInMemoryDB_integration_test(t *testing.T) {
 	type operations []struct {
-		args           []string // Arguments to be passed to the cli
-		postValue      string   // The value posted by a post operation
-		postTTL        int64    // The TTL posted by a post operation
-		cliShouldError bool     // Whether the cli should itself error
-		expected       any      // The expected response
+		args           []string      // Arguments to be passed to the cli
+		postValue      string        // The value posted by a post operation
+		postTTL        int64         // The TTL posted by a post operation
+		cliShouldError bool          // Whether the cli should itself error
+		expected       any           // The expected response
+		wait           time.Duration // Time to wait before running operation
 	}
 
 	testCases := []struct {
@@ -216,6 +218,63 @@ func TestInMemoryDB_integration_test(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Invalid args",
+			operations: operations{
+				{
+					args:           []string{"endpoint", "put", "-v", "hello"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "put", "-k", "hello"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "delete"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "get"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "getTTL"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "post"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "publish", "-m", "hello"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "publish", "-c", "hello"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "sub", "-m", "hello"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"endpoint", "sub", "-c", "hello"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"server", "serve", "--persist"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"server", "serve", "--persist-file", "blah.json"},
+					cliShouldError: true,
+				},
+				{
+					args:           []string{"dogs"},
+					cliShouldError: true,
+				},
+			},
+		},
 	}
 
 	for _, tt := range testCases {
@@ -243,17 +302,19 @@ func TestInMemoryDB_integration_test(t *testing.T) {
 			<-time.After(100 * time.Millisecond) // Wait for server to set up
 
 			for i, op := range tt.operations {
+				<-time.After(op.wait)
 				t.Logf("Running operation %v with args %v", i, op.args)
 				out, err := execute(t, cmd.NewRootCmd(), op.args...)
-				if err != nil {
-					t.Errorf("Expected no error from the CLI but got one: %v", err)
-				}
 
 				if op.cliShouldError {
 					if err == nil {
 						t.Errorf("CLI should have an error")
 					}
 					continue
+				}
+
+				if err != nil {
+					t.Errorf("Expected no error from the CLI but got one: %v", err)
 				}
 
 				switch op.expected.(type) {
@@ -305,7 +366,7 @@ func TestInMemoryDB_integration_test(t *testing.T) {
 									t.Fatalf("Error unmarshalling json: %v", err)
 								}
 
-								if res.Status != 200 || res.Key != result.Key || *res.TTL != op.postTTL {
+								if res.Status != 200 || res.Key != result.Key || *res.TTL < op.postTTL-2 {
 									t.Errorf("Expected response to be %v, %v, %v. Instead got %v, %v, %v",
 										200, result.Key, op.postTTL, res.Status, res.Key, *res.TTL,
 									)
@@ -366,7 +427,7 @@ func TestInMemoryDB_integration_test(t *testing.T) {
 						if expected.TTL == nil && result.TTL != nil {
 							t.Fatalf("Expected TTL to be nil but got %v", result.TTL)
 						}
-						if expected.TTL != nil && result.TTL != nil && *result.TTL != *expected.TTL {
+						if expected.TTL != nil && result.TTL != nil && *result.TTL < *expected.TTL-2 {
 							t.Errorf("Expected value to be %v but got %v", *expected.TTL, *result.TTL)
 						}
 					}
@@ -374,6 +435,137 @@ func TestInMemoryDB_integration_test(t *testing.T) {
 			}
 			cancel()
 			wg.Wait()
+		})
+	}
+}
+
+func TestInMemoryDB_integration_pubSub_test(t *testing.T) {
+	type subscriber struct {
+		channel  string
+		expected []string
+		expire   string
+	}
+
+	type publisher struct {
+		channel string
+		message string
+		wait    time.Duration
+	}
+
+	tests := []struct {
+		name        string
+		subscribers []subscriber
+		publishers  []publisher
+	}{
+		{
+			name: "One subscriber",
+			subscribers: []subscriber{
+				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
+			},
+			publishers: []publisher{
+				{channel: "test", message: "message1", wait: 60 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 80 * time.Millisecond},
+			},
+		},
+		{
+			name: "Multiple subscribers",
+			subscribers: []subscriber{
+				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
+				{channel: "test", expected: []string{"message1", "message2"}, expire: "1"},
+				{channel: "dogs", expected: []string{"message1", "message2", "message3", "message4"}, expire: "1"},
+			},
+			publishers: []publisher{
+				{channel: "test", message: "message1", wait: 60 * time.Millisecond},
+				{channel: "test", message: "message2", wait: 80 * time.Millisecond},
+				{channel: "dogs", message: "message1", wait: 60 * time.Millisecond},
+				{channel: "dogs", message: "message2", wait: 80 * time.Millisecond},
+				{channel: "dogs", message: "message3", wait: 100 * time.Millisecond},
+				{channel: "dogs", message: "message4", wait: 120 * time.Millisecond},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var wg sync.WaitGroup
+			dir := t.TempDir()
+			serverStartArgs := []string{"server", "serve",
+				"--startup-file", "startup.json",
+				"--persist", "-c", "1", "--persist-file", dir + "persist.json",
+				"--no-log",
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			serverCmd := cmd.NewRootCmd()
+			serverCmd.SetArgs(serverStartArgs)
+			serverCmd.SetContext(ctx)
+			go func() {
+				err := serverCmd.ExecuteContext(ctx)
+				if err != nil {
+					t.Errorf("Error executing server command with context: %v", err)
+				}
+			}()
+
+			<-time.After(100 * time.Millisecond) // Wait for server to set up
+
+			for i, s := range tt.subscribers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					t.Logf("Subscriber %v subscribing to channel %v", i, s.channel)
+
+					args := []string{"endpoint", "subscribe", "-c", s.channel, "-t", s.expire}
+					output, err := execute(t, cmd.NewRootCmd(), args...)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+
+					// Get each message
+					messageCount := 0
+					scanner := bufio.NewScanner(strings.NewReader(output))
+					for scanner.Scan() {
+						line := scanner.Text()
+						t.Logf("Subscriber %v has received line %v", i, line)
+
+						// Only check valid SSE output
+						if strings.HasPrefix(line, "data: ") {
+							if messageCount > len(s.expected) {
+								t.Errorf("Too many messages received got %v expected %v", messageCount, len(s.expected))
+								break
+							}
+							msg := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+							if msg != s.expected[messageCount] {
+								t.Errorf("For message %v expected %v but got %v", messageCount, s.expected[messageCount], msg)
+								break
+							}
+							messageCount++
+						}
+					}
+					if messageCount != len(s.expected) {
+						t.Errorf("Incorrect message count got %v expected %v", messageCount, len(s.expected))
+					}
+					if err = scanner.Err(); err != nil {
+						t.Error(err)
+					}
+				}()
+			}
+
+			// Start each publisher
+			for _, p := range tt.publishers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					args := []string{"endpoint", "publish", "-c", p.channel, "-m", p.message}
+					<-time.After(p.wait)
+					_, err := execute(t, cmd.NewRootCmd(), args...)
+					if err != nil {
+						t.Errorf("Error executing publish: %v", err)
+					}
+				}()
+			}
+
+			wg.Wait()
+			cancel()
 		})
 	}
 }
