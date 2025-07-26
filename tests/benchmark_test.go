@@ -1,10 +1,10 @@
 package tests
 
 import (
-	"InMemoryDB/database"
-	"InMemoryDB/handler"
 	"context"
 	"fmt"
+	"github.com/pthav/InMemoryDB/database"
+	"github.com/pthav/InMemoryDB/handler"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -69,128 +69,148 @@ func generatePost() struct {
 	return data
 }
 
-var tests = []struct {
-	name     string   // The test case name
-	validOps []string // The valid operations to be selected from
-}{
-	{
-		name:     "PUT only",
-		validOps: []string{"PUT"},
-	},
-	{
-		name:     "CREATE only",
-		validOps: []string{"POST"},
-	},
-	{
-		name:     "GET only",
-		validOps: []string{"GET"},
-	},
-	{
-		name:     "TTL only",
-		validOps: []string{"TTL"},
-	},
-	{
-		name:     "DELETE only",
-		validOps: []string{"DELETE"},
-	},
-	{
-		name:     "PUB only",
-		validOps: []string{"PUB"},
-	},
-	{
-		name:     "ALL",
-		validOps: []string{"GET", "POST", "PUT", "DELETE", "TTL", "PUB"},
-	},
-}
-
-var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
-
-var puSize = 500000
-var putRequests = make([]struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-	Ttl   *int64 `json:"ttl"`
-}, puSize)
-var pu atomic.Int64
-
-var poSize = 500000
-var postRequests = make([]struct {
-	Value string `json:"value"`
-	Ttl   *int64 `json:"ttl"`
-}, poSize)
-var po atomic.Int64
-
-var gSize = 500000
-var getRequests = make([]string, gSize)
-var g atomic.Int64
-
-var gtSize = 500000
-var getTTLRequests = make([]string, gtSize)
-var gt atomic.Int64
-
-var dSize = 500000
-var deleteRequests = make([]string, dSize)
-var d atomic.Int64
-
-var pubSize = 500000
-var pubRequests = make([]struct {
-	message string
-	channel string
-}, pubSize)
-
-var pub atomic.Int64
-
-// Set up randomly generated operations
-func setup() {
-	putRequests = make([]struct {
+type benchmarkHelperStruct struct {
+	tests []struct {
+		name     string   // The test case name
+		validOps []string // The valid operations to be selected from
+	}
+	puSize      int
+	putRequests []struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
-	}, puSize)
-	for i := 0; i < puSize; i++ {
-		putRequests = append(putRequests, generatePut())
 	}
-
-	postRequests = make([]struct {
+	pu           *atomic.Int64
+	poSize       int
+	postRequests []struct {
 		Value string `json:"value"`
 		Ttl   *int64 `json:"ttl"`
-	}, poSize)
-	for i := 0; i < poSize; i++ {
-		postRequests = append(postRequests, generatePost())
 	}
-
-	getRequests = make([]string, gSize)
-	for i := 0; i < gSize; i++ {
-		getRequests = append(getRequests, randomString(10))
-	}
-
-	getTTLRequests = make([]string, gtSize)
-	for i := 0; i < gtSize; i++ {
-		getTTLRequests = append(getTTLRequests, randomString(10))
-	}
-
-	deleteRequests = make([]string, dSize)
-	for i := 0; i < dSize; i++ {
-		deleteRequests = append(deleteRequests, randomString(10))
-	}
-
-	pubRequests = make([]struct {
+	po             *atomic.Int64
+	gSize          int
+	getRequests    []string
+	g              *atomic.Int64
+	gtSize         int
+	dSize          int
+	getTTLRequests []string
+	gt             *atomic.Int64
+	deleteRequests []string
+	d              *atomic.Int64
+	pubSize        int
+	pubRequests    []struct {
 		message string
 		channel string
-	}, pubSize)
-	for i := 0; i < pubSize; i++ {
-		pubRequests = append(pubRequests, struct {
+	}
+	pub *atomic.Int64
+}
+
+// Setup randomly generated operations
+func benchmarkHelper() benchmarkHelperStruct {
+	b := benchmarkHelperStruct{}
+	b.tests = []struct {
+		name     string   // The test case name
+		validOps []string // The valid operations to be selected from
+	}{
+		{
+			name:     "PUT only",
+			validOps: []string{"PUT"},
+		},
+		{
+			name:     "CREATE only",
+			validOps: []string{"POST"},
+		},
+		{
+			name:     "GET only",
+			validOps: []string{"GET"},
+		},
+		{
+			name:     "TTL only",
+			validOps: []string{"TTL"},
+		},
+		{
+			name:     "DELETE only",
+			validOps: []string{"DELETE"},
+		},
+		{
+			name:     "PUB only",
+			validOps: []string{"PUB"},
+		},
+		{
+			name:     "ALL",
+			validOps: []string{"GET", "POST", "PUT", "DELETE", "TTL", "PUB"},
+		},
+	}
+
+	b.puSize = 500000
+	b.putRequests = make([]struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+		Ttl   *int64 `json:"ttl"`
+	}, b.puSize)
+	b.pu = new(atomic.Int64)
+
+	b.poSize = 500000
+	b.postRequests = make([]struct {
+		Value string `json:"value"`
+		Ttl   *int64 `json:"ttl"`
+	}, b.poSize)
+	b.po = new(atomic.Int64)
+
+	b.gSize = 500000
+	b.getRequests = make([]string, b.gSize)
+	b.g = new(atomic.Int64)
+
+	b.gtSize = 500000
+	b.getTTLRequests = make([]string, b.gtSize)
+	b.gt = new(atomic.Int64)
+
+	b.dSize = 500000
+	b.deleteRequests = make([]string, b.dSize)
+	b.d = new(atomic.Int64)
+
+	b.pubSize = 500000
+	b.pubRequests = make([]struct {
+		message string
+		channel string
+	}, b.pubSize)
+	b.pub = new(atomic.Int64)
+
+	for i := 0; i < b.puSize; i++ {
+		b.putRequests = append(b.putRequests, generatePut())
+	}
+
+	for i := 0; i < b.poSize; i++ {
+		b.postRequests = append(b.postRequests, generatePost())
+	}
+
+	for i := 0; i < b.gSize; i++ {
+		b.getRequests = append(b.getRequests, randomString(10))
+	}
+
+	for i := 0; i < b.gtSize; i++ {
+		b.getTTLRequests = append(b.getTTLRequests, randomString(10))
+	}
+
+	for i := 0; i < b.dSize; i++ {
+		b.deleteRequests = append(b.deleteRequests, randomString(10))
+	}
+
+	for i := 0; i < b.pubSize; i++ {
+		b.pubRequests = append(b.pubRequests, struct {
 			message string
 			channel string
 		}{message: randomString(10), channel: randomString(2)})
 	}
+
+	return b
 }
 
 // BenchmarkDatabaseOperations only benchmarks the database
 func BenchmarkDatabaseOperations(b *testing.B) {
-	setup()
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bstruct := benchmarkHelper()
 
-	for _, tt := range tests {
+	for _, tt := range bstruct.tests {
 		if tt.name == "PUB only" {
 			continue
 		}
@@ -210,20 +230,20 @@ func BenchmarkDatabaseOperations(b *testing.B) {
 
 					switch funcType {
 					case "PUT":
-						index := int(pu.Add(1)) % puSize
-						db.Put(putRequests[index])
+						index := int(bstruct.pu.Add(1)) % bstruct.puSize
+						db.Put(bstruct.putRequests[index])
 					case "POST":
-						index := int(po.Add(1)) % poSize
-						db.Create(postRequests[index])
+						index := int(bstruct.po.Add(1)) % bstruct.poSize
+						db.Create(bstruct.postRequests[index])
 					case "GET":
-						index := int(g.Add(1)) % gSize
-						db.Get(getRequests[index])
+						index := int(bstruct.g.Add(1)) % bstruct.gSize
+						db.Get(bstruct.getRequests[index])
 					case "DELETE":
-						index := int(d.Add(1)) % dSize
-						db.Delete(deleteRequests[index])
+						index := int(bstruct.d.Add(1)) % bstruct.dSize
+						db.Delete(bstruct.deleteRequests[index])
 					case "TTL":
-						index := int(gt.Add(1)) % gtSize
-						db.GetTTL(getTTLRequests[index])
+						index := int(bstruct.gt.Add(1)) % bstruct.gtSize
+						db.GetTTL(bstruct.getTTLRequests[index])
 					}
 				}
 			})
@@ -233,9 +253,10 @@ func BenchmarkDatabaseOperations(b *testing.B) {
 
 // BenchmarkHTTP benchmarks the http handler injected with InMemoryDatabase
 func BenchmarkHTTP(b *testing.B) {
-	setup()
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bstruct := benchmarkHelper()
 
-	for _, tt := range tests {
+	for _, tt := range bstruct.tests {
 		tt := tt // Capture for go routines
 		b.Run(tt.name, func(b *testing.B) {
 			b.ReportAllocs()
@@ -261,46 +282,46 @@ func BenchmarkHTTP(b *testing.B) {
 					funcType := tt.validOps[rand.Intn(len(tt.validOps))]
 					switch funcType {
 					case "PUT":
-						index := int(pu.Add(1)) % puSize
-						url := "/v1/keys/" + putRequests[index].Key
+						index := int(bstruct.pu.Add(1)) % bstruct.puSize
+						url := "/v1/keys/" + bstruct.putRequests[index].Key
 						var body string
-						if putRequests[index].Ttl != nil {
-							body = fmt.Sprintf(`{"value": %v, "ttl": %v}`, putRequests[index].Value, *putRequests[index].Ttl)
+						if bstruct.putRequests[index].Ttl != nil {
+							body = fmt.Sprintf(`{"value": %v, "ttl": %v}`, bstruct.putRequests[index].Value, *bstruct.putRequests[index].Ttl)
 						} else {
-							body = fmt.Sprintf(`{"value": %v}`, putRequests[index].Value)
+							body = fmt.Sprintf(`{"value": %v}`, bstruct.putRequests[index].Value)
 						}
 						r := httptest.NewRequest("PUT", url, strings.NewReader(body))
 						h.ServeHTTP(httptest.NewRecorder(), r)
 					case "POST":
-						index := int(po.Add(1)) % poSize
+						index := int(bstruct.po.Add(1)) % bstruct.poSize
 						url := "/v1/keys"
 						var body string
-						if postRequests[index].Ttl != nil {
-							body = fmt.Sprintf(`{"value": %v, "ttl": %v}`, postRequests[index].Value, *postRequests[index].Ttl)
+						if bstruct.postRequests[index].Ttl != nil {
+							body = fmt.Sprintf(`{"value": %v, "ttl": %v}`, bstruct.postRequests[index].Value, *bstruct.postRequests[index].Ttl)
 						} else {
-							body = fmt.Sprintf(`{"value": %v}`, postRequests[index].Value)
+							body = fmt.Sprintf(`{"value": %v}`, bstruct.postRequests[index].Value)
 						}
 						r := httptest.NewRequest("POST", url, strings.NewReader(body))
 						h.ServeHTTP(httptest.NewRecorder(), r)
 					case "GET":
-						index := int(g.Add(1)) % gSize
-						url := "/v1/keys/" + getRequests[index]
+						index := int(bstruct.g.Add(1)) % bstruct.gSize
+						url := "/v1/keys/" + bstruct.getRequests[index]
 						r := httptest.NewRequest("GET", url, strings.NewReader("{}"))
 						h.ServeHTTP(httptest.NewRecorder(), r)
 					case "DELETE":
-						index := int(d.Add(1)) % dSize
-						url := "/v1/keys/" + deleteRequests[index]
+						index := int(bstruct.d.Add(1)) % bstruct.dSize
+						url := "/v1/keys/" + bstruct.deleteRequests[index]
 						r := httptest.NewRequest("DELETE", url, strings.NewReader("{}"))
 						h.ServeHTTP(httptest.NewRecorder(), r)
 					case "TTL":
-						index := int(gt.Add(1)) % gtSize
-						url := "/v1/ttl/" + getTTLRequests[index]
+						index := int(bstruct.gt.Add(1)) % bstruct.gtSize
+						url := "/v1/ttl/" + bstruct.getTTLRequests[index]
 						r := httptest.NewRequest("GET", url, strings.NewReader("{}"))
 						h.ServeHTTP(httptest.NewRecorder(), r)
 					case "PUB":
-						index := int(pub.Add(1)) % pubSize
-						url := "/v1/publish/" + pubRequests[index].channel
-						body := fmt.Sprintf(`{"message":%v}`, pubRequests[index].message)
+						index := int(bstruct.pub.Add(1)) % bstruct.pubSize
+						url := "/v1/publish/" + bstruct.pubRequests[index].channel
+						body := fmt.Sprintf(`{"message":%v}`, bstruct.pubRequests[index].message)
 						r := httptest.NewRequest("POST", url, strings.NewReader(body))
 						h.ServeHTTP(httptest.NewRecorder(), r)
 					}

@@ -1,12 +1,12 @@
 package server
 
 import (
-	"InMemoryDB/database"
-	"InMemoryDB/handler"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/pthav/InMemoryDB/database"
+	"github.com/pthav/InMemoryDB/handler"
 	"io"
 	"log/slog"
 	"net"

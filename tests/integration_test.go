@@ -1,11 +1,11 @@
 package tests
 
 import (
-	"InMemoryDB/cmd"
 	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/pthav/InMemoryDB/cmd"
 	"github.com/spf13/cobra"
 	"strings"
 	"sync"

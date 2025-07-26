@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"InMemoryDB/cmd/server"
+	"github.com/pthav/InMemoryDB/cmd/server"
 	"os"
 
-	"InMemoryDB/cmd/endpoint"
+	"github.com/pthav/InMemoryDB/cmd/endpoint"
 	"github.com/spf13/cobra"
 )
 

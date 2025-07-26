@@ -21,8 +21,8 @@ type putCall struct {
 	ttl   int64  // TTL for the Put
 }
 
-// SetupHelper will take functions and use them to create a database
-func SetupHelper(i *InMemoryDatabase, functions *[]any, expectedOrder *map[string]int) {
+// setupHelper will take functions and use them to create a database
+func setupHelper(i *InMemoryDatabase, functions *[]any, expectedOrder *map[string]int) {
 	for _, function := range *functions {
 		switch function.(type) {
 		case *createCall:
@@ -499,7 +499,7 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 				t.Error(err)
 			}
 
-			SetupHelper(i, &tt.functions, nil)
+			setupHelper(i, &tt.functions, nil)
 
 			timeAfterCreation := time.Now().UnixMilli()
 
@@ -601,7 +601,7 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			SetupHelper(i, &tt.functions, nil)
+			setupHelper(i, &tt.functions, nil)
 
 			<-time.After(waitTime)
 

@@ -1,7 +1,9 @@
 package tests
 
 import (
-	"InMemoryDB/database"
+	"github.com/pthav/InMemoryDB/database"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -26,6 +28,7 @@ import (
 
 // FuzzDB fuzzes tests for InMemoryDB.Create
 func FuzzDBCreate(f *testing.F) {
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	f.Fuzz(func(t *testing.T, value string, useTTL bool, ttl int64, waitExpire bool) {
 		if value == "" || ttl <= 0 || ttl > 5 || (!useTTL && waitExpire) {
 			t.Skip("Invalid test case")
@@ -83,6 +86,7 @@ func FuzzDBCreate(f *testing.F) {
 
 // FuzzDB fuzzes tests for InMemoryDB.Put
 func FuzzDBPut(f *testing.F) {
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	f.Fuzz(func(t *testing.T, key string, value string, useTTL bool, ttl int64, waitExpire bool) {
 		if key == "" || value == "" || ttl <= 0 || ttl > 5 || (!useTTL && waitExpire) {
 			t.Skip("Invalid test case")
@@ -145,6 +149,7 @@ func FuzzDBPut(f *testing.F) {
 
 // FuzzDBDelete fuzzes tests for InMemoryDB.Delete
 func FuzzDBDelete(f *testing.F) {
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	f.Fuzz(func(t *testing.T, key string) {
 		db, _ := database.NewInMemoryDatabase(
 			database.WithLogger(discardLogger),

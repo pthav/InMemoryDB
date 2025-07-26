@@ -1,7 +1,7 @@
 package main
 
 import (
-	"InMemoryDB/cmd"
+	"github.com/pthav/InMemoryDB/cmd"
 )
 
 // integration tests
