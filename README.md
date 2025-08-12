@@ -19,7 +19,7 @@ InMemoryDB is a simple database that stores key-value pairs in memory as strings
 - TTL (time to live) can be optionally provided when creating or updating key-value pairs.
 - Configuration is enabled through optional functions that may be passed in with instantiation.
   - A start up JSON file may be provided.
-  - Persistence may be enabled with a specified cycle and a specified file to persist to. The database will also attempt to persist on shutdown. The format will be JSON.
+  - Persistence may be enabled with a specified cycle and a specified file to persist to. The database will also attempt to persist on shutdown. Two kinds of persistence are supported: AOF persistence in a similar way to Redis, and full database persistence using the gob package, a binary encoding/decoding golang package.
   - Logging can be customized with an injectable logger
 - Concurrency is supported through a read-write mutex.
 ### API
@@ -63,10 +63,14 @@ The CLI is split into `server` and `endpoint` parent commands.
 - Server
   - serve allows you to serve an instance of the database.
     - `--host` sets the host for the API to listen on.
-    - `--startup-file` allows specification of JSON formatted starting data to boot with.
-    - `--persist` is a boolean flag that enables persistence. This flag is required when using the `--persist-file` flag.
-    - `--persist-file` will set the persistence output to the specified file and is required when using the `--persist` flag.
-    - `--persist-cycle, -c` allows for a set cycle in seconds to routinely persist on.
+    - `--aof-startup-file` allows specification of AOF encoded starting data to boot with. This flag is mutually exclusive with the `--db-startup-file` flag.
+    - `--aof-persist` is a boolean flag that enables aof persistence. This flag is required when using the `--aof-persist-file` flag.
+    - `--aof-persist-file` will set the database AOF output to the specified file and is required when using the `--aof-persist` flag.
+    - `--aof-persist-cycle` allows for a set cycle in seconds to routinely persist the full AOF on.
+    - `--db-startup-file` allows specification of gob encoded starting data to boot with. This flag is mutually exclusive with the `--aof-startup-file` flag.
+    - `--db-persist` is a boolean flag that enables database persistence. This flag is required when using the `--db-persist-file` flag.
+    - `--db-persist-file` will set the database persistence output to the specified file and is required when using the `--db-persist` flag.
+    - `--db-persist-cycle` allows for a set cycle in seconds to routinely persist the full database on.
     - `--no-log` is a boolean flag that will disable logging for both the database and API when set.
 - Endpoint commands will forward a request to the API of a database and output the response to STDOUT in indented JSON.
   - `--rootURL, -u` establishes the root URL to forward requests to.

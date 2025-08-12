@@ -1,8 +1,9 @@
 package database
 
 import (
+	"bytes"
 	"container/heap"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"github.com/google/uuid"
 	"log/slog"
@@ -364,13 +365,15 @@ func (i *InMemoryDatabase) persistDatabase() {
 		return
 	}
 
-	data, err := json.MarshalIndent(i, "", "  ")
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(i)
 	if err != nil {
 		i.s.logger.Error("error marshaling database: ", "err", err)
 		return
 	}
 
-	_, err = file.Write(data)
+	_, err = file.Write(buf.Bytes())
 	if err != nil {
 		i.s.logger.Error("error writing database json to file: ", "err", err)
 		return

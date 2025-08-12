@@ -2,8 +2,11 @@ package database
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -656,18 +659,17 @@ func TestInMemoryDatabase_Persistence(t *testing.T) {
 				t.Fatal("Failed to read persistDatabase.json")
 			}
 
-			var db *InMemoryDatabase
-
-			err = json.Unmarshal(data, &db)
-			if err != nil {
-				t.Fatal("Failed to unmarshal persistDatabase.json")
+			var decodedData *InMemoryDatabase
+			dec := gob.NewDecoder(bytes.NewBuffer(data))
+			if err := dec.Decode(&decodedData); err != nil {
+				log.Fatal("Decode error:", err)
 			}
 
-			if !reflect.DeepEqual(db.ttl, i.ttl) {
+			if !reflect.DeepEqual(decodedData.ttl, i.ttl) {
 				t.Errorf("Actual ttl heap does not match persistDatabase.json")
 			}
 
-			if !reflect.DeepEqual(db.database, i.database) {
+			if !reflect.DeepEqual(decodedData.database, i.database) {
 				t.Errorf("Actual database does not match persistDatabase.json")
 			}
 		})
