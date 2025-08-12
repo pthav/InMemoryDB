@@ -28,16 +28,6 @@ func (e *databaseEntry) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (i *InMemoryDatabase) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		DbStore dbStore  `json:"dbStore"`
-		TTL     *ttlHeap `json:"ttlHeap"`
-	}{
-		DbStore: i.database,
-		TTL:     i.ttl,
-	})
-}
-
 func (t ttlHeapData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Key string `json:"key"`
@@ -62,6 +52,16 @@ func (t *ttlHeapData) UnmarshalJSON(data []byte) error {
 	t.ttl = T.TTL
 
 	return nil
+}
+
+func (i *InMemoryDatabase) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		DbStore dbStore  `json:"dbStore"`
+		TTL     *ttlHeap `json:"ttlHeap"`
+	}{
+		DbStore: i.database,
+		TTL:     i.ttl,
+	})
 }
 
 func (i *InMemoryDatabase) UnmarshalJSON(data []byte) error {

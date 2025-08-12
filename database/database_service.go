@@ -3,6 +3,7 @@ package database
 import (
 	"container/heap"
 	"encoding/json"
+	"fmt"
 	"github.com/google/uuid"
 	"log/slog"
 	"os"
@@ -35,10 +36,13 @@ func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
 		mu:       sync.RWMutex{},
 		newItem:  make(chan struct{}, 1),
 		s: settings{
-			shouldPersist:     false,
-			persistFile:       "persist.json",
-			persistencePeriod: 5 * time.Minute,
-			logger:            slog.New(slog.NewTextHandler(os.Stdout, nil)),
+			shouldAofPersist:          false,
+			aofPersistenceFile:        "persistAof",
+			aofPersistencePeriod:      time.Second,
+			shouldDatabasePersist:     false,
+			databasePersistenceFile:   "persistDatabase.json",
+			databasePersistencePeriod: 5 * time.Minute,
+			logger:                    slog.New(slog.NewTextHandler(os.Stdout, nil)),
 		},
 	}
 	heap.Init(db.ttl)
@@ -51,37 +55,57 @@ func NewInMemoryDatabase(opts ...Options) (db *InMemoryDatabase, err error) {
 	}
 
 	go db.ttlCleanup()
-	if db.s.shouldPersist {
-		go db.persistCycle()
+	if db.s.shouldAofPersist {
+		go db.persistAofCycle()
+	}
+
+	if db.s.shouldDatabasePersist {
+		go db.persistDatabaseCycle()
 	}
 
 	return
 }
 
-// Shutdown will persist one last time if it is enabled.
+// Shutdown will persistDatabase one last time if it is enabled.
 func (i *InMemoryDatabase) Shutdown() {
-	if i.s.shouldPersist {
-		i.persist()
+	if i.s.shouldAofPersist {
+		i.persistAof()
+	}
+
+	if i.s.shouldDatabasePersist {
+		i.persistDatabase()
 	}
 }
 
 // GetSettings returns the database settings so that the settings struct does not have to be an exported type
 func (i *InMemoryDatabase) GetSettings() struct {
-	StartupFile       string
-	ShouldPersist     bool
-	PersistFile       string
-	PersistencePeriod time.Duration
+	AofStartupFile            string
+	ShouldAofPersist          bool
+	AofPersistFile            string
+	AofPersistencePeriod      time.Duration
+	DatabaseStartupFile       string
+	ShouldDatabasePersist     bool
+	DatabasePersistFile       string
+	DatabasePersistencePeriod time.Duration
 } {
 	return struct {
-		StartupFile       string
-		ShouldPersist     bool
-		PersistFile       string
-		PersistencePeriod time.Duration
+		AofStartupFile            string
+		ShouldAofPersist          bool
+		AofPersistFile            string
+		AofPersistencePeriod      time.Duration
+		DatabaseStartupFile       string
+		ShouldDatabasePersist     bool
+		DatabasePersistFile       string
+		DatabasePersistencePeriod time.Duration
 	}{
-		StartupFile:       i.s.startupFile,
-		ShouldPersist:     i.s.shouldPersist,
-		PersistFile:       i.s.persistFile,
-		PersistencePeriod: i.s.persistencePeriod,
+		AofStartupFile:            i.s.aofStartupFile,
+		ShouldAofPersist:          i.s.shouldAofPersist,
+		AofPersistFile:            i.s.aofPersistenceFile,
+		AofPersistencePeriod:      i.s.aofPersistencePeriod,
+		DatabaseStartupFile:       i.s.databaseStartupFile,
+		ShouldDatabasePersist:     i.s.shouldDatabasePersist,
+		DatabasePersistFile:       i.s.databasePersistenceFile,
+		DatabasePersistencePeriod: i.s.databasePersistencePeriod,
 	}
 }
 
@@ -110,6 +134,13 @@ func (i *InMemoryDatabase) Create(data struct {
 		default:
 		}
 	}
+
+	if data.Ttl != nil {
+		i.appendToAof(fmt.Sprintf(`PUT %s %s %v`, id, data.Value, *data.Ttl))
+	} else {
+		i.appendToAof(fmt.Sprintf(`PUT %s %s %v`, id, data.Value, -1))
+	}
+
 	return !loaded, id
 }
 
@@ -150,6 +181,12 @@ func (i *InMemoryDatabase) Put(data struct {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
+	if data.Ttl != nil {
+		i.appendToAof(fmt.Sprintf(`PUT %s %s %v`, data.Key, data.Value, *data.Ttl))
+	} else {
+		i.appendToAof(fmt.Sprintf(`PUT %s %s %v`, data.Key, data.Value, -1))
+	}
+
 	_, loaded := i.load(data.Key)
 	newEntry := databaseEntry{value: data.Value}
 	var ttl int64
@@ -176,6 +213,8 @@ func (i *InMemoryDatabase) Put(data struct {
 func (i *InMemoryDatabase) Delete(key string) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+
+	i.appendToAof(fmt.Sprintf(`DELETE %s`, key))
 
 	_, loaded := i.loadAndDelete(key)
 	return loaded
@@ -224,6 +263,7 @@ func (i *InMemoryDatabase) ttlCleanup() {
 			// Delete only if it still exists and the ttl has not been modified
 			dbEntry, loaded := i.load(key)
 			if loaded && dbEntry.ttl != nil && *dbEntry.ttl == ttl {
+				i.appendToAof(fmt.Sprintf(`DELETE %s`, key))
 				i.delete(key)
 			}
 		}
@@ -231,50 +271,110 @@ func (i *InMemoryDatabase) ttlCleanup() {
 	}
 }
 
-// persistCycle will call the persist function based on a configured period
-func (i *InMemoryDatabase) persistCycle() {
-	i.s.logger.Info("starting persistence routine")
-	for {
-		<-time.After(i.s.persistencePeriod)
-		i.persist()
+// appendToAof will append a line to the AOF file. This function assumes a lock has been acquired.
+func (i *InMemoryDatabase) appendToAof(line string) {
+	if !i.s.shouldAofPersist {
+		return
+	}
+
+	file, err := os.OpenFile(i.s.aofPersistenceFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		i.s.logger.Error("failed to open aof persistence file", "err", err)
+		return
+	}
+	defer func() {
+		err = file.Close()
+		if err != nil {
+			i.s.logger.Error("error closing persistence file: ", "err", err)
+			return
+		}
+	}()
+
+	_, err = file.WriteString(line + "\n")
+	if err != nil {
+		i.s.logger.Error("failed to append to aof persistence file", "err", err)
+		return
 	}
 }
 
-// persist will attempt to persist all storage data to the configured output file
-func (i *InMemoryDatabase) persist() {
+// persistAofCycle will call the persistAof function based on a configured period
+func (i *InMemoryDatabase) persistAofCycle() {
+	i.s.logger.Info("starting AOF persistence routine")
+	for {
+		<-time.After(time.Second)
+		i.persistAof()
+	}
+}
+
+// persistAof will sync the AOF file to make sure all changes are up to date
+func (i *InMemoryDatabase) persistAof() {
 	i.mu.Lock()
-	i.s.logger.Info("attempting to persist data")
+	defer i.mu.Unlock()
+
+	i.s.logger.Info("attempting to persist aof data")
+
+	file, err := os.OpenFile(i.s.aofPersistenceFile, os.O_SYNC|os.O_CREATE, 0644)
+	if err != nil {
+		i.s.logger.Error("failed to open aof persistence file", "err", err)
+		return
+	}
+	defer func() {
+		err = file.Close()
+		if err != nil {
+			i.s.logger.Error("error closing persistence file: ", "err", err)
+			return
+		}
+	}()
+
+	err = file.Sync()
+	if err != nil {
+		i.s.logger.Error("failed to sync aof persistence file", "err", err)
+		return
+	}
+}
+
+// persistDatabaseCycle will call the persistDatabase function based on a configured period
+func (i *InMemoryDatabase) persistDatabaseCycle() {
+	i.s.logger.Info("starting database persistence routine")
+	for {
+		<-time.After(i.s.databasePersistencePeriod)
+		i.persistDatabase()
+	}
+}
+
+// persistDatabase will attempt to persistDatabase all storage data to the configured output file
+func (i *InMemoryDatabase) persistDatabase() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	i.s.logger.Info("attempting to persist database data")
 
 	// Make sure the file is open
-	file, err := os.Create(i.s.persistFile)
+	file, err := os.Create(i.s.databasePersistenceFile)
+	defer func() {
+		err = file.Close()
+		if err != nil {
+			i.s.logger.Error("error closing persistence file: ", "err", err)
+			return
+		}
+	}()
 
 	if err != nil {
-		i.s.logger.Error("Error opening/creating persistence file: ", "err", err)
-		i.mu.Unlock()
+		i.s.logger.Error("error opening/creating persistence file: ", "err", err)
 		return
 	}
 
 	data, err := json.MarshalIndent(i, "", "  ")
 	if err != nil {
-		i.s.logger.Error("Error marshaling database: ", "err", err)
-		i.mu.Unlock()
+		i.s.logger.Error("error marshaling database: ", "err", err)
 		return
 	}
 
 	_, err = file.Write(data)
 	if err != nil {
-		i.s.logger.Error("Error writing database json to file: ", "err", err)
-		i.mu.Unlock()
+		i.s.logger.Error("error writing database json to file: ", "err", err)
 		return
 	}
-
-	err = file.Close()
-	if err != nil {
-		i.s.logger.Error("Error closing persistence file: ", "err", err)
-		i.mu.Unlock()
-		return
-	}
-	i.mu.Unlock()
 }
 
 // These helper functions assume the caller has locked the database mutex

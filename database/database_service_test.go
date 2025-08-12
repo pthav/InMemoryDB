@@ -1,11 +1,14 @@
 package database
 
 import (
-	"container/heap"
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,6 +24,10 @@ type putCall struct {
 	ttl   int64  // TTL for the Put
 }
 
+type deleteCall struct {
+	key string // key for the Delete
+}
+
 // setupHelper will take functions and use them to create a database
 func setupHelper(i *InMemoryDatabase, functions *[]any, expectedOrder *map[string]int) {
 	for _, function := range *functions {
@@ -30,9 +37,12 @@ func setupHelper(i *InMemoryDatabase, functions *[]any, expectedOrder *map[strin
 				Value string `json:"value"`
 				Ttl   *int64 `json:"ttl"`
 			}{
-				function.(*createCall).value,
-				&function.(*createCall).ttl,
+				Value: function.(*createCall).value,
 			}
+			if function.(*createCall).ttl >= 0 {
+				arguments.Ttl = &function.(*createCall).ttl
+			}
+
 			_, uuid := i.Create(arguments)
 			if expectedOrder != nil {
 				(*expectedOrder)[uuid] = function.(*createCall).index
@@ -43,11 +53,16 @@ func setupHelper(i *InMemoryDatabase, functions *[]any, expectedOrder *map[strin
 				Value string `json:"value"`
 				Ttl   *int64 `json:"ttl"`
 			}{
-				function.(*putCall).key,
-				function.(*putCall).value,
-				&function.(*putCall).ttl,
+				Key:   function.(*putCall).key,
+				Value: function.(*putCall).value,
 			}
+			if function.(*putCall).ttl >= 0 {
+				arguments.Ttl = &function.(*putCall).ttl
+			}
+
 			i.Put(arguments)
+		case *deleteCall:
+			i.Delete(function.(*deleteCall).key)
 		}
 	}
 }
@@ -531,117 +546,148 @@ func TestInMemoryDatabase_Cleanup(t *testing.T) {
 }
 
 func TestInMemoryDatabase_Persistence(t *testing.T) {
-	intPtr := func(v int64) *int64 {
-		return &v
-	}
-
 	tests := []struct {
-		name        string
-		functions   []any
-		expectedDB  dbStore
-		expectedTTL *ttlHeap
+		name      string
+		functions []any
 	}{
 		{
 			name: "Test saving database",
 			functions: []any{
 				&putCall{"hello1", "hello1", 10},
+				&deleteCall{"hello1"},
 				&putCall{"hello2", "hello2", 20},
 				&putCall{"hello3", "hello3", 30},
 				&putCall{"hello4", "hello4", 40},
+				&deleteCall{"hello4"},
 				&putCall{"hello3", "hello3", 50},
-			},
-			expectedDB: dbStore{
-				"hello1": databaseEntry{
-					value: "hello1",
-					ttl:   intPtr(10),
-				},
-				"hello2": databaseEntry{
-					value: "hello2",
-					ttl:   intPtr(20),
-				},
-				"hello3": databaseEntry{
-					value: "hello3",
-					ttl:   intPtr(50),
-				},
-				"hello4": databaseEntry{
-					value: "hello4",
-					ttl:   intPtr(40),
-				},
-			},
-			expectedTTL: &ttlHeap{
-				ttlHeapData{
-					key: "hello1",
-					ttl: 10,
-				},
-				ttlHeapData{
-					key: "hello2",
-					ttl: 20,
-				},
-				ttlHeapData{
-					key: "hello3",
-					ttl: 50,
-				},
-				ttlHeapData{
-					key: "hello4",
-					ttl: 40,
-				},
-			},
+				&deleteCall{"hello20"},
+				&putCall{"noTTL", "noTTL", -1},
+				&createCall{"hello1", 10, 0},
+				&createCall{"hello1", -1, 0}},
 		},
 	}
 
-	waitTime := 3 * time.Second
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fp := filepath.Join(t.TempDir(), "persist.json") // For persistence
+			fp := t.TempDir()
 
-			heap.Init(tt.expectedTTL)
-
-			i, err := NewInMemoryDatabase(WithPersistence(), WithPersistencePeriod(1*time.Second), WithPersistenceOutput(fp))
+			i, err := NewInMemoryDatabase(
+				WithAofPersistence(),
+				WithAofPersistencePeriod(1*time.Second),
+				WithAofPersistenceFile(filepath.Join(fp, "persist-aof")),
+				WithDatabasePersistence(),
+				WithDatabasePersistencePeriod(1*time.Second),
+				WithDatabasePersistenceFile(filepath.Join(fp, "persist-database.json")))
 			if err != nil {
 				t.Error(err)
 			}
 			setupHelper(i, &tt.functions, nil)
 
-			<-time.After(waitTime)
+			i.Shutdown()
 
-			data, err := os.ReadFile(fp)
+			// Test AOF persistence
+			file, err := os.Open(filepath.Join(fp, "persist-aof"))
 			if err != nil {
-				t.Fatal("Failed to read persist.json")
+				t.Error(err)
+			}
+			defer file.Close()
+
+			scanner := bufio.NewScanner(file)
+			for i, function := range tt.functions {
+				scanner.Scan()
+				line := scanner.Text()
+				args := strings.Split(line, " ")
+
+				switch function.(type) {
+				case *deleteCall:
+					if args[0] != "DELETE" {
+						t.Errorf("Expected delete command got %v", args[0])
+					}
+
+					if len(args) != 2 {
+						t.Errorf("For delete function at index %v, got incorrect number of args. Expected %v, but got %v", i, 2, len(args))
+					}
+
+					if function.(*deleteCall).key != args[1] {
+						t.Errorf("For delete function at index %v, got incorrect key. Expected %v, but got %v", i, function.(*deleteCall).key, args[1])
+					}
+				case *putCall:
+					if args[0] != "PUT" {
+						t.Errorf("Expected put command got %v", args[0])
+					}
+
+					if len(args) != 4 {
+						t.Errorf("For put function at index %v, got incorrect number of args. Expected %v, but got %v", i, 4, len(args))
+					}
+
+					if function.(*putCall).key != args[1] {
+						t.Errorf("For put function at index %v, got incorrect key. Expected %v, but got %v", i, function.(*putCall).key, args[1])
+					}
+
+					if function.(*putCall).value != args[2] {
+						t.Errorf("For put function at index %v, got incorrect value. Expected %v, but got %v", i, function.(*putCall).value, args[2])
+					}
+
+					if strconv.Itoa(int(function.(*putCall).ttl)) != args[3] {
+						t.Errorf("For put function at index %v, got incorrect ttl. Expected %v, but got %v", i, function.(*putCall).ttl, args[3])
+					}
+				case *createCall:
+					if args[0] != "PUT" {
+						t.Errorf("Expected put command got %v", args[0])
+					}
+
+					if len(args) != 4 {
+						t.Errorf("For create function at index %v, got incorrect number of args. Expected %v, but got %v", i, 4, len(args))
+					}
+
+					if function.(*createCall).value != args[2] {
+						t.Errorf("For create function at index %v, got incorrect value. Expected %v, but got %v", i, function.(*createCall).value, args[2])
+					}
+
+					if strconv.Itoa(int(function.(*createCall).ttl)) != args[3] {
+						t.Errorf("For create function at index %v, got incorrect ttl. Expected %v, but got %v", i, function.(*createCall).ttl, args[3])
+					}
+				}
+			}
+
+			// Test database persistence
+			data, err := os.ReadFile(filepath.Join(fp, "persist-database.json"))
+			if err != nil {
+				t.Fatal("Failed to read persistDatabase.json")
 			}
 
 			var db *InMemoryDatabase
 
 			err = json.Unmarshal(data, &db)
 			if err != nil {
-				t.Fatal("Failed to unmarshal persist.json")
+				t.Fatal("Failed to unmarshal persistDatabase.json")
 			}
 
 			if !reflect.DeepEqual(db.ttl, i.ttl) {
-				t.Errorf("Actual ttl heap does not match persist.json")
+				t.Errorf("Actual ttl heap does not match persistDatabase.json")
 			}
 
 			if !reflect.DeepEqual(db.database, i.database) {
-				t.Errorf("Actual database does not match persist.json")
+				t.Errorf("Actual database does not match persistDatabase.json")
 			}
 		})
 	}
 }
 
-func TestInMemoryDatabase_StartJson(t *testing.T) {
+func TestInMemoryDatabase_DatabaseStartJson(t *testing.T) {
 	tests := []struct {
 		name string
 		file string
 	}{
 		{
 			name: "Test starting database with json",
-			file: "testStartup.json",
+			file: "testDatabaseStartup.json",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i, err := NewInMemoryDatabase(WithInitialData(tt.file))
+			i, err := NewInMemoryDatabase(WithInitialData(tt.file, true))
 			if err != nil {
 				t.Error(err)
 			}
@@ -664,6 +710,101 @@ func TestInMemoryDatabase_StartJson(t *testing.T) {
 
 			if !reflect.DeepEqual(db.database, i.database) {
 				t.Errorf("Actual database does not match %v", tt.file)
+			}
+		})
+	}
+}
+
+func TestInMemoryDatabase_AofStart(t *testing.T) {
+	type expectationCommand struct {
+		key    string // Key to GET
+		exists bool   // Whether it should exist
+		value  string // What value it should have
+		ttl    int64  // What TTL it should have
+	}
+
+	tests := []struct {
+		name     string
+		commands []string
+		expected []expectationCommand
+	}{
+		{
+			name: "Test starting database with AOF",
+			commands: []string{
+				"PUT hello1 hello1 -1",
+				"PUT hello2 hello2 2751785118",
+				"DELETE hello1",
+				"PUT hello3 hello3 -1",
+				"DELETE doesn'tExist",
+			},
+			expected: []expectationCommand{
+				{
+					key:    "hello1",
+					exists: false,
+				},
+				{
+					key:    "hello2",
+					exists: true,
+					value:  "hello2",
+					ttl:    2751785118,
+				},
+				{
+					key:    "hello3",
+					exists: true,
+					value:  "hello3",
+					ttl:    -1,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fp := t.TempDir()
+
+			file, err := os.Create(filepath.Join(fp, "aof"))
+			if err != nil {
+				t.Error(err)
+			}
+			defer file.Close()
+
+			output := ""
+			for _, command := range tt.commands {
+				output += fmt.Sprintf("%v\n", command)
+			}
+
+			_, err = file.WriteString(output)
+			if err != nil {
+				t.Error(err)
+			}
+
+			db, err := NewInMemoryDatabase(WithInitialData(filepath.Join(fp, "aof"), false))
+			if err != nil {
+				t.Error(err)
+			}
+
+			for i, command := range tt.expected {
+				value, loaded := db.Get(command.key)
+				if loaded != command.exists {
+					t.Fatalf("For command at index %v, expected %v but got %v", i, command.exists, loaded)
+				}
+
+				if loaded && value != command.value {
+					t.Errorf("For command at index %v, expected %v but got %v", i, command.value, value)
+				}
+
+				if !command.exists {
+					continue
+				}
+
+				ttl, _ := db.GetTTL(command.key)
+				if command.ttl == -1 && ttl != nil {
+					t.Errorf("For command at index %v, expected nil ttl but got %v", i, *ttl)
+				} else if command.ttl != -1 && ttl == nil {
+					t.Errorf("For command at index %v, expected %v but got nil", i, command.ttl)
+				} else if command.ttl != -1 && *ttl != command.ttl-time.Now().Unix() {
+					t.Errorf("For command at index %v, expected %v but got %v", i, command.ttl, *ttl)
+				}
 			}
 		})
 	}

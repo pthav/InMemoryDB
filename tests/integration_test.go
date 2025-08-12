@@ -283,8 +283,8 @@ func TestInMemoryDB_integration_test(t *testing.T) {
 			wg.Add(1)
 			dir := t.TempDir()
 			serverStartArgs := []string{"server", "serve",
-				"--startup-file", "startup.json",
-				"--persist", "-c", "1", "--persist-file", dir + "persist.json",
+				"--db-startup-file", "startup.json",
+				"--db-persist", "--db-persist-cycle", "1", "--db-persist-file", dir + "persist.json",
 				"--no-log",
 			}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -490,8 +490,8 @@ func TestInMemoryDB_integration_pubSub_test(t *testing.T) {
 			var wg sync.WaitGroup
 			dir := t.TempDir()
 			serverStartArgs := []string{"server", "serve",
-				"--startup-file", "startup.json",
-				"--persist", "-c", "1", "--persist-file", dir + "persist.json",
+				"--db-startup-file", "startup.json",
+				"--db-persist", "--db-persist-cycle", "1", "--db-persist-file", dir + "persist.json",
 				"--no-log",
 			}
 			ctx, cancel := context.WithCancel(context.Background())

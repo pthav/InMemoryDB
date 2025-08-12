@@ -12,8 +12,8 @@ import (
 //func createStartupFile(samples int) {
 //	db, _ := database.NewInMemoryDatabase(
 //		database.WithLogger(discardLogger),
-//		database.WithPersistence(),
-//		database.WithPersistencePeriod(time.Duration(1)*time.Second),
+//		database.WithDatabasePersistence(),
+//		database.WithDatabasePersistencePeriod(time.Duration(1)*time.Second),
 //	)
 //
 //	for i := 0; i < samples; i++ {
@@ -36,7 +36,7 @@ func FuzzDBCreate(f *testing.F) {
 
 		db, _ := database.NewInMemoryDatabase(
 			database.WithLogger(discardLogger),
-			database.WithInitialData("startup.json"),
+			database.WithInitialData("startup.json", true),
 		)
 
 		createRequest := struct {
@@ -94,7 +94,7 @@ func FuzzDBPut(f *testing.F) {
 
 		db, _ := database.NewInMemoryDatabase(
 			database.WithLogger(discardLogger),
-			database.WithInitialData("startup.json"),
+			database.WithInitialData("startup.json", true),
 		)
 
 		_, exists := db.Get(key)
@@ -153,7 +153,7 @@ func FuzzDBDelete(f *testing.F) {
 	f.Fuzz(func(t *testing.T, key string) {
 		db, _ := database.NewInMemoryDatabase(
 			database.WithLogger(discardLogger),
-			database.WithInitialData("startup.json"),
+			database.WithInitialData("startup.json", true),
 		)
 
 		_, exists := db.Get(key)

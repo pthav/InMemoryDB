@@ -23,11 +23,15 @@ import (
 
 // Settings define user-configurable Settings for the database and http server
 type Settings struct {
-	Host              string        `json:"host"`              // The router's Host
-	StartupFile       string        `json:"startupFile"`       // The startup file
-	ShouldPersist     bool          `json:"shouldPersist"`     // Whether there should be persistence or not
-	PersistFile       string        `json:"persistFile"`       // The file name for which to output persistence to
-	PersistencePeriod time.Duration `json:"persistencePeriod"` // How long in between database persistence cycles
+	Host                      string        `json:"host"`                      // The router's Host
+	AofStartupFile            string        `json:"aofStartupFile"`            // The aof startup file
+	ShouldAofPersist          bool          `json:"shouldAofPersist"`          // Whether there should be aof persistence or not
+	AofPersistFile            string        `json:"aofPersistFile"`            // The file to output aof persistence to
+	AofPersistencePeriod      time.Duration `json:"aofPersistencePeriod"`      // How long in between the aof persistence cycles
+	DbStartupFile             string        `json:"dbStartupFile"`             // The database startup file
+	ShouldDatabasePersist     bool          `json:"shouldDatabasePersist"`     // Whether there should be database persistence or not
+	DatabasePersistFile       string        `json:"databasePersistFile"`       // The file name for which to output database persistence to
+	DatabasePersistencePeriod time.Duration `json:"databasePersistencePeriod"` // How long in between database persistence cycles
 }
 
 // shutdown is called when the http server is shutting down gracefully
@@ -51,10 +55,14 @@ func shutdown(db *database.InMemoryDatabase, c *cobra.Command) {
 
 func newServeCmd() *cobra.Command {
 	var host string
-	var startupFile string
-	var persistencePeriod int
-	var persistFile string
-	var shouldPersist bool
+	var aofStartupFile string
+	var shouldAofPersist bool
+	var aofPersistFile string
+	var aofPersistencePeriod int
+	var databaseStartupFile string
+	var shouldDatabasePersist bool
+	var databasePersistFile string
+	var databasePersistencePeriod int
 	var noLog bool
 
 	// serveCmd serves up a database
@@ -73,13 +81,22 @@ Flags can be provided to configure the database`,
 			}
 			config = append(config, database.WithLogger(logger))
 
-			config = append(config, database.WithPersistencePeriod(time.Duration(persistencePeriod)*time.Second))
-			if shouldPersist {
-				config = append(config, database.WithPersistence())
-				config = append(config, database.WithPersistenceOutput(persistFile))
+			config = append(config, database.WithDatabasePersistencePeriod(time.Duration(databasePersistencePeriod)*time.Second))
+			if shouldDatabasePersist {
+				config = append(config, database.WithDatabasePersistence())
+				config = append(config, database.WithDatabasePersistenceFile(databasePersistFile))
 			}
-			if startupFile != "" {
-				config = append(config, database.WithInitialData(startupFile))
+			if databaseStartupFile != "" {
+				config = append(config, database.WithInitialData(databaseStartupFile, true))
+			}
+
+			config = append(config, database.WithAofPersistencePeriod(time.Duration(aofPersistencePeriod)*time.Second))
+			if shouldAofPersist {
+				config = append(config, database.WithAofPersistenceFile(aofPersistFile))
+				config = append(config, database.WithDatabasePersistenceFile(databasePersistFile))
+			}
+			if aofStartupFile != "" {
+				config = append(config, database.WithInitialData(aofStartupFile, false))
 			}
 
 			db, err := database.NewInMemoryDatabase(config...) // Configure database
@@ -89,11 +106,15 @@ Flags can be provided to configure the database`,
 
 			dbSettings := db.GetSettings()
 			s := Settings{
-				Host:              host,
-				StartupFile:       dbSettings.StartupFile,
-				ShouldPersist:     dbSettings.ShouldPersist,
-				PersistFile:       dbSettings.PersistFile,
-				PersistencePeriod: dbSettings.PersistencePeriod,
+				Host:                      host,
+				AofStartupFile:            dbSettings.AofStartupFile,
+				ShouldAofPersist:          shouldAofPersist,
+				AofPersistFile:            dbSettings.AofPersistFile,
+				AofPersistencePeriod:      dbSettings.AofPersistencePeriod,
+				DbStartupFile:             dbSettings.DatabaseStartupFile,
+				ShouldDatabasePersist:     dbSettings.ShouldDatabasePersist,
+				DatabasePersistFile:       dbSettings.DatabasePersistFile,
+				DatabasePersistencePeriod: dbSettings.DatabasePersistencePeriod,
 			}
 			out, err := json.MarshalIndent(s, "", "\t")
 			if err != nil {
@@ -146,12 +167,21 @@ Flags can be provided to configure the database`,
 	}
 
 	serveCmd.Flags().StringVarP(&host, "host", "", "localhost:8080", "Host to listen for requests on")
-	serveCmd.Flags().StringVar(&startupFile, "startup-file", "", "File containing json data to initialize the database with.")
-	serveCmd.Flags().IntVarP(&persistencePeriod, "persist-cycle", "c", 60, "How long the persistence cycle should be in seconds.")
-	serveCmd.Flags().StringVar(&persistFile, "persist-file", "", "File to persist the database to.")
-	serveCmd.Flags().BoolVar(&shouldPersist, "persist", false, "Enables persistence.")
 	serveCmd.Flags().BoolVar(&noLog, "no-log", false, "Disables logging output.")
-	serveCmd.MarkFlagsRequiredTogether("persist-file", "persist")
+
+	serveCmd.Flags().StringVar(&databaseStartupFile, "db-startup-file", "", "File containing json data to initialize the database with.")
+	serveCmd.Flags().BoolVar(&shouldDatabasePersist, "db-persist", false, "Enables database persistence.")
+	serveCmd.Flags().StringVar(&databasePersistFile, "db-persist-file", "", "File to persist the database to.")
+	serveCmd.Flags().IntVarP(&databasePersistencePeriod, "db-persist-cycle", "", 60, "How long the database persistence cycle should be in seconds.")
+	serveCmd.MarkFlagsRequiredTogether("db-persist-file", "db-persist")
+
+	serveCmd.Flags().StringVar(&aofStartupFile, "aof-startup-file", "", "File containing aof data to initialize the database with.")
+	serveCmd.Flags().BoolVar(&shouldAofPersist, "aof-persist", false, "Enables aof persistence.")
+	serveCmd.Flags().StringVar(&aofPersistFile, "aof-persist-file", "", "File to persist aof data to.")
+	serveCmd.Flags().IntVarP(&aofPersistencePeriod, "aof-persist-cycle", "", 1, "How long the aof persistence cycle should be in seconds.")
+	serveCmd.MarkFlagsRequiredTogether("aof-persist-file", "aof-persist")
+
+	serveCmd.MarkFlagsMutuallyExclusive("db-startup-file", "aof-startup-file")
 
 	return serveCmd
 }
